@@ -1,11 +1,13 @@
 import { fetchResults } from "@/lib/clubspot";
+import { toField } from "@/lib/field";
 
 export const maxDuration = 60;
 
 const ID = /^[A-Za-z0-9]{6,20}$/;
 
 // GET /api/regatta/:id?class=<boatClassId>&reg=<registrationId>&date=ISO&method=<scoring>
-// Results for one class (fleet) of a regatta, plus the sailor's row found by registration id.
+// Results for one class (fleet) of a regatta: the sailor's row (found by
+// registration id) plus the whole fleet in compact form.
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const q = new URL(req.url).searchParams;
@@ -29,6 +31,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         raceCount,
         match,
         winner: top ? { name: top.name, net: top.net } : null,
+        field: toField(standings, raceCount),
       },
       { headers: { "Cache-Control": "public, s-maxage=21600, stale-while-revalidate=604800" } },
     );

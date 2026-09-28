@@ -1,3 +1,6 @@
+import type { LoadedRegatta } from "./analysis";
+import type { FieldRow } from "./field";
+import { isOptiFleet } from "./fleets";
 import { percentile, type RaceScore, type Standing } from "./standings";
 
 export type RegattaResult = {
@@ -102,4 +105,26 @@ export function byYear(results: RegattaResult[]) {
   return [...m.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([year, ps]) => ({ year, avg: ps.reduce((a, b) => a + b, 0) / ps.length, regattas: ps.length }));
+}
+
+/**
+ * Regattas with whole-fleet results, ready for ratings / head-to-head / clubs.
+ * The sailor's own row is renamed to `canonicalName` so a nickname or typo on
+ * one registration doesn't split their history. Optimist fleets only.
+ */
+export function toLoaded(
+  results: RegattaResult[],
+  fields: Record<string, FieldRow[]>,
+  canonicalName: string,
+): LoadedRegatta[] {
+  return results
+    .filter((r) => fields[r.id] && isOptiFleet(r.fleet))
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      date: r.date,
+      fleet: r.fleet,
+      url: r.url,
+      field: fields[r.id].map((row) => (row.id === r.me.id ? { ...row, n: canonicalName } : row)),
+    }));
 }

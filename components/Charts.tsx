@@ -1,17 +1,27 @@
 "use client";
 
+import { useState } from "react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
+  ScatterChart,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts";
+import { fleetTier, TIER_COLOR, TIER_LABEL, TIER_SHAPE, TIERS, type Tier } from "@/lib/fleets";
+import { byRaceNumber, type TierSummary } from "@/lib/insights";
+import type { RatingPoint } from "@/lib/rating";
+import { ordinal } from "@/lib/format";
 import { percentile } from "@/lib/standings";
 import { allRaces, byYear, finishDistribution, rollingAverage, type RegattaResult } from "@/lib/stats";
 
@@ -26,36 +36,266 @@ const tooltipStyle = {
     fontSize: 13,
   },
   labelStyle: { color: "var(--text-secondary)" },
-  cursor: { stroke: "var(--text-muted)", strokeDasharray: "3 3" },
+  itemStyle: { color: "var(--text-primary)" },
 };
+const legendStyle = { fontSize: 12, color: "var(--text-secondary)" };
 
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+const shortDate = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
-function Card({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+
+function Card(props: { title: string; sub: string; children: React.ReactNode; action?: React.ReactNode; wide?: boolean }) {
   return (
-    <section className="card chart">
-      <h3>{title}</h3>
-      <p className="muted small">{sub}</p>
-      <div className="chart-box">{children}</div>
+    <section className={`card chart${props.wide ? " wide" : ""}`}>
+      <div className="chart-head">
+        <div>
+          <h3>{props.title}</h3>
+          <p className="muted small">{props.sub}</p>
+        </div>
+        {props.action}
+      </div>
+      <div className="chart-box">{props.children}</div>
     </section>
   );
 }
 
-export function Charts({ results }: { results: RegattaResult[] }) {
-  const chrono = [...results].sort((a, b) => a.date.localeCompare(b.date));
-  const regattaData = chrono.map((r) => ({
-    label: shortDate(r.date),
-    name: r.name,
-    pct: percentile(r.me.place, r.entrants),
-    place: r.me.place,
-    entrants: r.entrants,
-    fleet: r.me.fleet,
-  }));
+function Seg<T extends string>(props: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <div className="seg" role="radiogroup">
+      {props.options.map(([v, label]) => (
+        <button key={v} role="radio" aria-checked={props.value === v} onClick={() => props.onChange(v)}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
+type Metric = "perf" | "pct" | "beaten";
+const METRICS: [Metric, string][] = [
+  ["perf", "Rating"],
+  ["pct", "% beaten"],
+  ["beaten", "Boats beaten"],
+];
+
+type Point = {
+  t: number;
+  y: number;
+  name: string;
+  place: number;
+  entrants: number;
+  fleet: string;
+  tier: Tier;
+  perf: number | null;
+  strength: number | null;
+};
+
+function PointTooltip({ active, payload }: { active?: boolean; payload?: { payload: Point }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="tip">
+      <b>{d.name}</b>
+      <div className="muted">
+        {new Date(d.t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} · {d.fleet}
+      </div>
+      <div>
+        {ordinal(d.place)} of {d.entrants} · beat {Math.max(0, d.entrants - d.place)} boats (
+        {Math.round(percentile(d.place, d.entrants) ?? 0)}%)
+      </div>
+      {d.perf != null && (
+        <div>
+          Performance rating <b>{Math.round(d.perf)}</b>
+          {d.strength != null && <span className="muted"> · field avg {Math.round(d.strength)}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Every regatta, coloured and shaped by fleet level, on a real time axis. */
+export function RegattaChart({ results, perf }: { results: RegattaResult[]; perf: Map<string, RatingPoint> }) {
+  const [metric, setMetric] = useState<Metric>("perf");
+  const points: Point[] = results.map((r) => {
+    const p = perf.get(r.id);
+    const y =
+      metric === "perf"
+        ? p?.performance ?? NaN
+        : metric === "pct"
+          ? percentile(r.me.place, r.entrants) ?? NaN
+          : Math.max(0, r.entrants - r.me.place);
+    return {
+      t: Date.parse(r.date),
+      y,
+      name: r.name,
+      place: r.me.place,
+      entrants: r.entrants,
+      fleet: r.fleet,
+      tier: fleetTier(r.fleet),
+      perf: p?.performance ?? null,
+      strength: p?.fieldStrength ?? null,
+    };
+  });
+  const present = TIERS.filter((t) => points.some((p) => p.tier === t && Number.isFinite(p.y)));
+  const sub =
+    metric === "perf"
+      ? "Performance rating accounts for how strong each fleet was — Championship results count for more than Green"
+      : metric === "pct"
+        ? "Share of the fleet you beat (100% = won). Doesn't account for fleet strength"
+        : "Number of boats that finished behind you";
+  return (
+    <Card title="Regatta results by fleet level" sub={sub} wide action={<Seg value={metric} options={METRICS} onChange={setMetric} />}>
+      <ResponsiveContainer width="100%" height={300}>
+        <ScatterChart margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="t" type="number" scale="time" domain={["dataMin - 1296000000", "dataMax + 1296000000"]} tickFormatter={shortDate} {...axis} />
+          <YAxis
+            dataKey="y"
+            type="number"
+            domain={metric === "pct" ? [0, 100] : ["auto", "auto"]}
+            unit={metric === "pct" ? "%" : ""}
+            width={48}
+            {...axis}
+          />
+          <ZAxis range={[90, 90]} />
+          <Tooltip content={<PointTooltip />} cursor={{ strokeDasharray: "3 3", stroke: "var(--text-muted)" }} />
+          <Legend wrapperStyle={legendStyle} />
+          {present.map((tier) => (
+            <Scatter
+              key={tier}
+              name={TIER_LABEL[tier]}
+              data={points.filter((p) => p.tier === tier && Number.isFinite(p.y))}
+              fill={TIER_COLOR[tier]}
+              shape={TIER_SHAPE[tier]}
+              stroke="var(--surface-1)"
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+/** Rating over time (after each regatta). With `other`, overlays a second sailor. */
+export function RatingChart(props: { history: RatingPoint[]; other?: { name: string; history: RatingPoint[] }; meName?: string }) {
+  const rows = new Map<number, { t: number; me?: number; other?: number; tier?: Tier; otherTier?: Tier }>();
+  for (const h of props.history) {
+    const t = Date.parse(h.date);
+    rows.set(t, { ...rows.get(t), t, me: Math.round(h.after), tier: h.tier });
+  }
+  for (const h of props.other?.history ?? []) {
+    const t = Date.parse(h.date);
+    rows.set(t, { ...rows.get(t), t, other: Math.round(h.after), otherTier: h.tier });
+  }
+  const data = [...rows.values()].sort((a, b) => a.t - b.t);
+  const TierDot = (p: { cx?: number; cy?: number; payload?: { tier?: Tier }; value?: number }) =>
+    p.cx == null || p.cy == null || p.value == null ? <g /> : (
+      <circle cx={p.cx} cy={p.cy} r={4.5} fill={TIER_COLOR[p.payload?.tier ?? "champ"]} stroke="var(--surface-1)" strokeWidth={2} />
+    );
+  return (
+    <Card
+      title="Rating over time"
+      sub={
+        props.other
+          ? "Both sailors' ratings, updated race by race from every boat you each raced"
+          : "Updated race by race: beating strong sailors raises it more than beating beginners. Dots show fleet level"
+      }
+      wide={!!props.other}
+    >
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={shortDate} {...axis} />
+          <YAxis domain={["auto", "auto"]} width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            labelFormatter={(t) => new Date(Number(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          />
+          {props.other && <Legend wrapperStyle={legendStyle} />}
+          <Line
+            name={props.meName ?? "Rating"}
+            dataKey="me"
+            stroke="var(--series-1)"
+            strokeWidth={2}
+            dot={props.other ? { r: 3, fill: "var(--series-1)", strokeWidth: 0 } : <TierDot />}
+            connectNulls
+            isAnimationActive={false}
+          />
+          {props.other && (
+            <Line
+              name={props.other.name}
+              dataKey="other"
+              stroke="var(--series-2)"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "var(--series-2)", strokeWidth: 0 }}
+              connectNulls
+              isAnimationActive={false}
+            />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+/** Fleet levels side by side: raw finish vs strength-adjusted rating. */
+export function TierChart({ tiers }: { tiers: TierSummary[] }) {
+  const [metric, setMetric] = useState<"perf" | "pct">("perf");
+  const data = tiers.map((t) => ({
+    tier: t.tier,
+    label: TIER_LABEL[t.tier],
+    value: metric === "perf" ? (t.avgPerformance != null ? Math.round(t.avgPerformance) : null) : t.avgPct != null ? Math.round(t.avgPct) : null,
+    regattas: t.regattas,
+    pct: t.avgPct,
+    perf: t.avgPerformance,
+  }));
+  return (
+    <Card
+      title="Championship vs Green"
+      sub={metric === "perf" ? "Average performance rating by fleet level (accounts for fleet strength)" : "Average share of the fleet beaten by fleet level (raw)"}
+      action={
+        <Seg
+          value={metric}
+          options={[
+            ["perf", "Rating"],
+            ["pct", "% beaten"],
+          ]}
+          onChange={setMetric}
+        />
+      }
+    >
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="label" {...axis} interval={0} />
+          <YAxis domain={metric === "pct" ? [0, 100] : [0, "auto"]} unit={metric === "pct" ? "%" : ""} width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            cursor={{ fill: "var(--grid)" }}
+            formatter={(_v, _n, p) => {
+              const d = p.payload as (typeof data)[number];
+              return [
+                `${d.perf != null ? `rating ${Math.round(d.perf)} · ` : ""}${d.pct != null ? `${Math.round(d.pct)}% beaten` : ""} · ${d.regattas} regatta${d.regattas === 1 ? "" : "s"}`,
+                d.label,
+              ];
+            }}
+          />
+          <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={64} label={{ position: "top", fill: "var(--text-secondary)", fontSize: 12 }}>
+            {data.map((d) => (
+              <Cell key={d.tier} fill={TIER_COLOR[d.tier]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+export function RaceChart({ results }: { results: RegattaResult[] }) {
   const races = allRaces(results);
   const roll = rollingAverage(races.map((r) => r.pct), 10);
-  const raceData = races.map((r, i) => ({
+  const data = races.map((r, i) => ({
     i: i + 1,
     label: `${r.regatta} · R${r.race}`,
     pct: r.pct,
@@ -63,116 +303,91 @@ export function Charts({ results }: { results: RegattaResult[] }) {
     finish: r.letter ?? r.points,
     starters: r.starters,
   }));
-
-  const dist = finishDistribution(races);
-  const years = byYear(results);
-
   return (
-    <div className="chart-grid">
-      <Card title="Regatta finishes" sub="Share of your fleet you beat at each regatta (100% = won)">
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={regattaData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-            {grid}
-            <XAxis dataKey="label" {...axis} />
-            <YAxis domain={[0, 100]} unit="%" {...axis} />
-            <Tooltip
-              {...tooltipStyle}
-              labelFormatter={(_, p) => (p?.[0]?.payload?.name as string) ?? ""}
-              formatter={(v, _n, p) => {
-                const d = p.payload as (typeof regattaData)[number];
-                return [
-                  `${Math.round(Number(v))}% · ${ordinal(d.place)} of ${d.entrants}${d.fleet ? ` · ${d.fleet}` : ""}`,
-                  "Finish",
-                ];
-              }}
-            />
-            <Line
-              type="monotone"
-              dataKey="pct"
-              stroke="var(--series-1)"
-              strokeWidth={2}
-              dot={{ r: 4, strokeWidth: 2, stroke: "var(--surface-1)", fill: "var(--series-1)" }}
-              activeDot={{ r: 6 }}
-              connectNulls
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </Card>
-
-      <Card title="Every race" sub="Race-by-race share of the start beaten, with a 10-race rolling average">
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={raceData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-            {grid}
-            <XAxis dataKey="i" {...axis} />
-            <YAxis domain={[0, 100]} unit="%" {...axis} />
-            <Tooltip
-              {...tooltipStyle}
-              labelFormatter={(_, p) => (p?.[0]?.payload?.label as string) ?? ""}
-              formatter={(v, n, p) => {
-                const d = p.payload as (typeof raceData)[number];
-                if (n === "Race") return [`${d.finish}${d.starters ? ` of ${d.starters}` : ""} (${Math.round(Number(v))}%)`, n];
-                return [`${Math.round(Number(v))}%`, n];
-              }}
-            />
-            <Legend wrapperStyle={{ fontSize: 12, color: "var(--text-secondary)" }} />
-            <Line
-              name="Race"
-              dataKey="pct"
-              stroke="var(--series-1)"
-              strokeOpacity={0.35}
-              strokeWidth={1}
-              dot={{ r: 2.5, strokeWidth: 0, fill: "var(--series-1)" }}
-              isAnimationActive={false}
-            />
-            <Line
-              name="10-race average"
-              dataKey="avg"
-              stroke="var(--series-2)"
-              strokeWidth={2}
-              dot={false}
-              type="monotone"
-              isAnimationActive={false}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </Card>
-
-      <Card title="Finish distribution" sub="Where your race finishes land in the start">
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={dist} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-            {grid}
-            <XAxis dataKey="bucket" {...axis} interval={0} fontSize={11} />
-            <YAxis allowDecimals={false} {...axis} />
-            <Tooltip {...tooltipStyle} cursor={{ fill: "var(--grid)" }} formatter={(v) => [v, "Races"]} />
-            <Bar dataKey="races" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={48} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-
-      <Card title="By season" sub="Average share of the fleet beaten per calendar year">
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={years} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
-            {grid}
-            <XAxis dataKey="year" {...axis} />
-            <YAxis domain={[0, 100]} unit="%" {...axis} />
-            <Tooltip
-              {...tooltipStyle}
-              cursor={{ fill: "var(--grid)" }}
-              formatter={(v, _n, p) => [
-                `${Math.round(Number(v))}% over ${(p.payload as { regattas: number }).regattas} regatta(s)`,
-                "Average",
-              ]}
-            />
-            <Bar dataKey="avg" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={56} />
-          </BarChart>
-        </ResponsiveContainer>
-      </Card>
-    </div>
+    <Card title="Every race" sub="Share of the start beaten in each race, with a 10-race rolling average">
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="i" {...axis} />
+          <YAxis domain={[0, 100]} unit="%" width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            labelFormatter={(_, p) => (p?.[0]?.payload?.label as string) ?? ""}
+            formatter={(v, n, p) => {
+              const d = p.payload as (typeof data)[number];
+              if (n === "Race") return [`${d.finish}${d.starters ? ` of ${d.starters}` : ""} (${Math.round(Number(v))}%)`, n];
+              return [`${Math.round(Number(v))}%`, n];
+            }}
+          />
+          <Legend wrapperStyle={legendStyle} />
+          <Line name="Race" dataKey="pct" stroke="var(--series-1)" strokeOpacity={0.35} strokeWidth={1} dot={{ r: 2.5, strokeWidth: 0, fill: "var(--series-1)" }} isAnimationActive={false} />
+          <Line name="10-race average" dataKey="avg" stroke="var(--series-2)" strokeWidth={2} dot={false} type="monotone" isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
   );
 }
 
-export function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+export function RaceNumberChart({ results }: { results: RegattaResult[] }) {
+  const data = byRaceNumber(results);
+  const mean = data.length ? data.reduce((a, b) => a + b.avg * b.n, 0) / data.reduce((a, b) => a + b.n, 0) : 0;
+  return (
+    <Card title="Early vs late races" sub="Average share of the start beaten by race number — do you start fast or finish strong?">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="race" {...axis} />
+          <YAxis domain={[0, 100]} unit="%" width={48} {...axis} />
+          <ReferenceLine y={mean} stroke="var(--text-muted)" strokeDasharray="4 4" label={{ value: "your average", position: "insideTopRight", fill: "var(--text-muted)", fontSize: 11 }} />
+          <Tooltip {...tooltipStyle} cursor={{ fill: "var(--grid)" }} formatter={(v, _n, p) => [`${Math.round(Number(v))}% over ${(p.payload as { n: number }).n} races`, "Average"]} />
+          <Bar dataKey="avg" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Card>
+  );
 }
+
+export function DistributionChart({ results }: { results: RegattaResult[] }) {
+  const dist = finishDistribution(allRaces(results));
+  return (
+    <Card title="Finish distribution" sub="Where your race finishes land in the start">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={dist} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="bucket" {...axis} interval={0} fontSize={11} />
+          <YAxis allowDecimals={false} {...axis} />
+          <Tooltip {...tooltipStyle} cursor={{ fill: "var(--grid)" }} formatter={(v) => [v, "Races"]} />
+          <Bar dataKey="races" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={48} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+export function SeasonChart({ results, perf }: { results: RegattaResult[]; perf: Map<string, RatingPoint> }) {
+  const years = byYear(results).map((y) => {
+    const ps = results.filter((r) => r.date.startsWith(y.year)).map((r) => perf.get(r.id)?.performance).filter((x): x is number => x != null);
+    return { ...y, perf: ps.length ? Math.round(ps.reduce((a, b) => a + b, 0) / ps.length) : null };
+  });
+  return (
+    <Card title="By season" sub="Average performance rating per calendar year">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={years} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="year" {...axis} />
+          <YAxis domain={[0, "auto"]} width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            cursor={{ fill: "var(--grid)" }}
+            formatter={(v, _n, p) => {
+              const d = p.payload as (typeof years)[number];
+              return [`rating ${v} · ${Math.round(d.avg)}% beaten · ${d.regattas} regatta(s)`, "Average"];
+            }}
+          />
+          <Bar dataKey="perf" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={56} label={{ position: "top", fill: "var(--text-secondary)", fontSize: 12 }} />
+        </BarChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+

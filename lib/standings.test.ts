@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeStandings, findSailor, nameMatches, percentile, type RawEntry } from "./standings.ts";
+import { computeStandings, findSailor, nameMatches, percentile, type RawEntry } from "./standings";
 
 const entry = (first: string, last: string, net: number, finals?: string, sail = "1"): RawEntry => ({
   registrationObject: { objectId: first, firstName: first, lastName: last, sailNumber: sail, assignments: finals ? { finals } : {} },
@@ -48,7 +48,7 @@ test("percentile", () => {
   assert.equal(percentile(1, 1), null);
 });
 
-import { isGreenFleet, isOptiFleet } from "./fleets.ts";
+import { isGreenFleet, isOptiFleet } from "./fleets";
 
 test("fleet classification", () => {
   for (const f of ["Opti Championship", "Optimist Red, White, and Blue (RWB)", "Opti Gold Fleet", "Optimist (White, Blue, Red)", "Green Fleet", "Opti Girls", "Optimist"]) {
