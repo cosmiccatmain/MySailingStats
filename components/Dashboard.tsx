@@ -112,7 +112,8 @@ export default function Dashboard() {
             const id = key(r);
             try {
               let data: RegattaResponse | null = null;
-              if (r.method !== "pdf") {
+              // "pdf" / "external_link" classes publish results outside Clubspot.
+              if (r.method !== "pdf" && r.method !== "external_link") {
                 const qs = new URLSearchParams({ class: r.classId, reg: r.registrationId, date: r.date, method: r.method ?? "" });
                 const rr = await fetch(`/api/regatta/${r.regattaId}?${qs}`);
                 data = (await rr.json()) as RegattaResponse;
@@ -390,7 +391,7 @@ function Results(props: {
             {unscored.length} more regatta{unscored.length === 1 ? "" : "s"} registered without online scores
           </summary>
           <p className="muted small">
-            Results for these were posted another way (e.g. a PDF), or you didn&rsquo;t race.
+            Results for these were posted outside Clubspot (PDF or another site), or you didn&rsquo;t race.
           </p>
           <ul>
             {[...unscored]

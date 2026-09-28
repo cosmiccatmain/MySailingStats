@@ -75,30 +75,32 @@ export async function findRegistrations(fullName: string): Promise<Registration[
     for (const v of [l, titleCase(l.toLowerCase()), l.toLowerCase(), l.toUpperCase()]) lastCandidates.add(v);
   }
 
-  const data = await parse<{ results?: RegRow[]; error?: string }>("classes/registrations", {
-    _method: "GET",
-    where: {
-      $or: [
-        { lastName: { $in: [...lastCandidates] } },
-        { lastName: { $regex: `^${escapeRe(rest)}` } },
-      ],
-      regattaObject: { $exists: true },
-    },
-    include: "regattaObject,regattaObject.clubObject,boatClassObject",
-    keys: [
-      "firstName", "lastName", "sailNumber", "status", "archived",
-      "regattaObject.name", "regattaObject.startDate", "regattaObject.archived",
-      "regattaObject.clubObject.name", "boatClassObject.name", "boatClassObject.scoring",
-    ].join(","),
-    limit: 1000,
-  });
-  if (data.error) throw new Error(data.error);
+  // Two indexed lookups run in parallel ($or across them is far slower on Clubspot).
+  const query = (lastName: unknown) =>
+    parse<{ results?: RegRow[]; error?: string }>("classes/registrations", {
+      _method: "GET",
+      where: { lastName, regattaObject: { $exists: true } },
+      include: "regattaObject,regattaObject.clubObject,boatClassObject",
+      keys: [
+        "firstName", "lastName", "sailNumber", "status", "archived",
+        "regattaObject.name", "regattaObject.startDate", "regattaObject.archived",
+        "regattaObject.clubObject.name", "boatClassObject.name", "boatClassObject.scoring",
+      ].join(","),
+      limit: 1000,
+    });
+  const [exact, prefix] = await Promise.all([
+    query({ $in: [...lastCandidates] }),
+    query({ $regex: `^${escapeRe(rest)}` }),
+  ]);
+  if (exact.error) throw new Error(exact.error);
+  const rows = new Map<string, RegRow>();
+  for (const r of [...(exact.results ?? []), ...(prefix.results ?? [])]) rows.set(r.objectId, r);
 
   const wantFirst = normalize(first);
   const wantLast = normalize(rest);
   const now = Date.now();
   const byKey = new Map<string, Registration & { confirmed: boolean }>();
-  for (const r of data.results ?? []) {
+  for (const r of rows.values()) {
     const rg = r.regattaObject;
     const bc = r.boatClassObject;
     if (!rg?.startDate?.iso || !bc?.objectId || rg.archived || r.archived) continue;
