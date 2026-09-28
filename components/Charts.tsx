@@ -69,7 +69,7 @@ export function Charts({ results }: { results: RegattaResult[] }) {
 
   return (
     <div className="chart-grid">
-      <Card title="Regatta finishes" sub="Share of the Champ fleet you beat at each regatta (100% = won)">
+      <Card title="Regatta finishes" sub="Share of your fleet you beat at each regatta (100% = won)">
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={regattaData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
             {grid}

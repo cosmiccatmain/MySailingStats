@@ -1,25 +1,31 @@
-// Server-side access to USODA's results. usoda.org is a Clubspot site: the
-// results archive and regatta pages are rendered in the browser from
-// Clubspot's public Parse API and results service, so we call those directly.
+// Server-side access to sailing results on Clubspot. usoda.org and most US
+// yacht-club regatta sites (local junior regattas included) run on Clubspot;
+// their pages render in the browser from Clubspot's public Parse API and
+// results service, so we call those directly.
 
-import { computeStandings, type RawEntry, type Standing } from "./standings";
+import { computeStandings, normalize, type RawEntry, type Standing } from "./standings";
 
-export const USODA_CLUB_ID = "kujycb4Vou";
 const PARSE_URL = "https://theclubspot.com/parse";
-const PARSE_APP_ID = "myclubspot2017"; // public app id shipped in usoda.org's own page JS
+const PARSE_APP_ID = "myclubspot2017"; // public app id shipped in every Clubspot site's page JS
 const RESULTS_URL = "https://results.theclubspot.com";
-// usoda.org switches to the v5 scorer for regattas starting after this date.
+// Clubspot's results pages switch to the v5 scorer for regattas starting after this date.
 const V5_CUTOFF = Date.parse("2024-12-31T23:59:59.999Z");
 
-export type RegattaSummary = {
-  id: string;
-  name: string;
-  date: string; // ISO start date
-  url: string;
-  external: string | null;
-};
-
 export type BoatClass = { id: string; name: string; method: string | null };
+
+/** One regatta the sailor registered for, in the class (fleet) they sailed. */
+export type Registration = {
+  registrationId: string;
+  regattaId: string;
+  regatta: string;
+  date: string; // ISO start date
+  club: string;
+  url: string;
+  classId: string;
+  className: string;
+  method: string | null;
+  sail: string;
+};
 
 async function parse<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${PARSE_URL}/${path}`, {
@@ -32,67 +38,99 @@ async function parse<T>(path: string, body: Record<string, unknown>): Promise<T>
   return res.json() as Promise<T>;
 }
 
-// Events on the USODA calendar that never have fleet results.
-const NON_RACING = /clinic|practice|horizon|camp|webinar|meeting|training|symposium|coach/i;
+type Ptr = { objectId: string };
+type RegRow = {
+  objectId: string;
+  firstName?: string;
+  lastName?: string;
+  sailNumber?: string | number;
+  status?: string;
+  archived?: boolean;
+  regattaObject?: Ptr & {
+    name?: string;
+    startDate?: { iso: string };
+    archived?: boolean;
+    clubObject?: Ptr & { name?: string };
+  };
+  boatClassObject?: Ptr & { name?: string; scoring?: { method?: string } };
+};
 
-export async function listRegattas(): Promise<RegattaSummary[]> {
-  type CalEvent = { id: string; title: string; ts: number; external_regatta_url?: string };
-  const data = await parse<{ result: CalEvent[] }>("functions/retrieve_regattas_for_calendar_v2", {
-    club_id: USODA_CLUB_ID,
-    start_timestamp: Date.parse("2010-01-01"),
-    end_timestamp: Date.now() + 24 * 3600 * 1000,
-    flow: "member_portal",
-  });
-  const now = Date.now();
-  const byId = new Map<string, RegattaSummary>();
-  for (const e of data.result ?? []) {
-    if (e.ts > now || NON_RACING.test(e.title)) continue;
-    const ext = e.external_regatta_url || null;
-    // Many "external" entries point at the host club's Clubspot site
-    // (theclubspot.com/regatta/<id>, abyc.org/regatta/<id>, …) — same API, so follow them.
-    const hosted = ext?.match(/\/regatta\/([A-Za-z0-9]{10})(?:[/?#]|$)/)?.[1];
-    const id = hosted ?? e.id;
-    if (byId.has(id)) continue;
-    byId.set(id, {
-      id,
-      name: e.title,
-      date: new Date(e.ts).toISOString(),
-      url: hosted ? `${ext!.split(/[?#]/)[0].replace(/\/$/, "")}/results` : `https://www.usoda.org/regatta/${id}/results`,
-      external: hosted ? null : ext,
-    });
-  }
-  return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date));
-}
-
-export async function listBoatClasses(regattaId: string): Promise<BoatClass[]> {
-  type Row = { objectId: string; name: string; scoring?: { method?: string } };
-  const data = await parse<{ results: Row[] }>("classes/boatClasses", {
-    _method: "GET",
-    where: {
-      regattaObject: { __type: "Pointer", className: "regattas", objectId: regattaId },
-      archived: false,
-    },
-    keys: "name,scoring",
-    order: "name",
-    limit: 100,
-  });
-  return (data.results ?? [])
-    .filter((c) => c.scoring?.method !== "not_racing")
-    .map((c) => ({ id: c.objectId, name: c.name, method: c.scoring?.method ?? null }));
-}
+const titleCase = (s: string) => s.replace(/(^|[\s'-])(\p{L})/gu, (m) => m.toUpperCase());
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * The Championship-fleet classes. Usually one "Opti Championship" class; some
- * host clubs instead split the champ fleet into e.g. "Opti Gold"/"Opti Silver".
- * Green (beginner) fleet and team racing are never included.
+ * Every Clubspot regatta registration under this sailor's name, across all
+ * clubs. The last name is matched exactly (in a few capitalisations, plus a
+ * prefix match — these hit Clubspot's index, so it's fast); the first name is
+ * then checked loosely so "Max" finds "Maxwell".
  */
-export function pickChampClasses(classes: BoatClass[]): BoatClass[] {
-  const racing = classes.filter(
-    (c) => !/green|withdrawn|removed|spectator|coach|vendor|team ?rac|parent/i.test(c.name),
-  );
-  const champ = racing.filter((c) => /champ/i.test(c.name));
-  if (champ.length) return champ;
-  return racing.filter((c) => /\b(opti|optimist)\b/i.test(c.name) || racing.length === 1);
+export async function findRegistrations(fullName: string): Promise<Registration[]> {
+  const tokens = fullName.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  const first = tokens.length > 1 ? tokens[0] : "";
+  const lastCandidates = new Set<string>();
+  const rest = tokens.slice(tokens.length > 1 ? 1 : 0).join(" ");
+  const lastWord = tokens[tokens.length - 1];
+  for (const l of [rest, lastWord]) {
+    for (const v of [l, titleCase(l.toLowerCase()), l.toLowerCase(), l.toUpperCase()]) lastCandidates.add(v);
+  }
+
+  const data = await parse<{ results?: RegRow[]; error?: string }>("classes/registrations", {
+    _method: "GET",
+    where: {
+      $or: [
+        { lastName: { $in: [...lastCandidates] } },
+        { lastName: { $regex: `^${escapeRe(rest)}` } },
+      ],
+      regattaObject: { $exists: true },
+    },
+    include: "regattaObject,regattaObject.clubObject,boatClassObject",
+    keys: [
+      "firstName", "lastName", "sailNumber", "status", "archived",
+      "regattaObject.name", "regattaObject.startDate", "regattaObject.archived",
+      "regattaObject.clubObject.name", "boatClassObject.name", "boatClassObject.scoring",
+    ].join(","),
+    limit: 1000,
+  });
+  if (data.error) throw new Error(data.error);
+
+  const wantFirst = normalize(first);
+  const wantLast = normalize(rest);
+  const now = Date.now();
+  const byKey = new Map<string, Registration & { confirmed: boolean }>();
+  for (const r of data.results ?? []) {
+    const rg = r.regattaObject;
+    const bc = r.boatClassObject;
+    if (!rg?.startDate?.iso || !bc?.objectId || rg.archived || r.archived) continue;
+    if (Date.parse(rg.startDate.iso) > now) continue;
+    if (bc.scoring?.method === "not_racing") continue;
+    const last = normalize(r.lastName ?? "");
+    if (last !== wantLast && last !== normalize(lastWord) && !last.startsWith(wantLast)) continue;
+    if (wantFirst) {
+      const f = normalize(r.firstName ?? "");
+      if (!(f.startsWith(wantFirst) || (f.length >= 2 && wantFirst.startsWith(f)))) continue;
+    }
+    const key = `${rg.objectId}:${bc.objectId}`;
+    const confirmed = r.status === "confirmed";
+    const prev = byKey.get(key);
+    if (prev && (prev.confirmed || !confirmed)) continue;
+    byKey.set(key, {
+      registrationId: r.objectId,
+      regattaId: rg.objectId,
+      regatta: rg.name ?? "Regatta",
+      date: rg.startDate.iso,
+      club: rg.clubObject?.name ?? "",
+      url: `https://theclubspot.com/regatta/${rg.objectId}/results`,
+      classId: bc.objectId,
+      className: bc.name ?? "",
+      method: bc.scoring?.method ?? null,
+      sail: r.sailNumber != null ? String(r.sailNumber) : "",
+      confirmed,
+    });
+  }
+  return [...byKey.values()]
+    .map(({ confirmed: _c, ...reg }) => reg)
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function fetchResults(

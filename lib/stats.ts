@@ -1,11 +1,13 @@
 import { percentile, type RaceScore, type Standing } from "./standings";
 
 export type RegattaResult = {
-  id: string;
+  id: string; // `${regattaId}:${classId}` — a sailor can race one class per regatta
+  regattaId: string;
+  club: string;
   name: string;
   date: string;
   url: string;
-  fleet: string; // boat class name, e.g. "Opti Championship"
+  fleet: string; // boat class name, e.g. "Opti Championship", "Optimist RWB"
   entrants: number;
   raceCount: number;
   winner: { name: string; net: number | null } | null;
@@ -55,6 +57,7 @@ export function summary(results: RegattaResult[]) {
     bestRace: finishes.length ? Math.min(...finishes.map((r) => r.points as number)) : null,
     top10Races: finishes.filter((r) => (r.points as number) <= 10).length,
     letters: races.filter((r) => r.letter).length,
+    clubs: new Set(results.map((r) => r.club).filter(Boolean)).size,
   };
 }
 
@@ -100,3 +103,5 @@ export function byYear(results: RegattaResult[]) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([year, ps]) => ({ year, avg: ps.reduce((a, b) => a + b, 0) / ps.length, regattas: ps.length }));
 }
+
+export const isGreenFleet = (fleet: string) => /green/i.test(fleet);

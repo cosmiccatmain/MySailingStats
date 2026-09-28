@@ -3,29 +3,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Charts, ordinal } from "./Charts";
 import { percentile, type Standing } from "@/lib/standings";
-import { allRaces, summary, type RegattaResult } from "@/lib/stats";
+import { allRaces, isGreenFleet, summary, type RegattaResult } from "@/lib/stats";
 
 type Profile = { name: string; sail: string };
-type RegattaSummary = { id: string; name: string; date: string; url: string; external: string | null };
+type Registration = {
+  registrationId: string;
+  regattaId: string;
+  regatta: string;
+  date: string;
+  club: string;
+  url: string;
+  classId: string;
+  className: string;
+  method: string | null;
+};
 type RegattaResponse = {
-  id: string;
-  fleet: string | null;
   entrants: number;
   raceCount: number;
   winner: { name: string; net: number | null } | null;
   match: Standing | null;
   error?: string;
 };
+type Unscored = { id: string; name: string; date: string; url: string; fleet: string; club: string };
 type Store = {
   results: RegattaResult[];
-  checked: Record<string, true>; // regattas already scanned whose results are final
-  excluded: string[]; // regatta ids the user marked "not me"
+  unscored: Unscored[]; // registered, but no online scores (PDF results, didn't sail, …)
+  checked: Record<string, true>; // regatta:class keys already scanned whose results are final
+  excluded: string[]; // keys the user marked "not me"
   scannedAt: string | null;
 };
 
 const PROFILE_KEY = "mss:profile";
-const storeKey = (p: Profile) => `mss:v1:${p.name.trim().toLowerCase()}|${p.sail.trim()}`;
-const EMPTY: Store = { results: [], checked: {}, excluded: [], scannedAt: null };
+const GREEN_KEY = "mss:showGreen";
+const storeKey = (p: Profile) => `mss:v2:${p.name.trim().toLowerCase()}`;
+const EMPTY: Store = { results: [], unscored: [], checked: {}, excluded: [], scannedAt: null };
 const FINAL_AFTER_DAYS = 14;
 const CONCURRENCY = 6;
 
@@ -54,19 +65,21 @@ export default function Dashboard() {
   const [store, setStore] = useState<Store>(EMPTY);
   const [progress, setProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showGreen, setShowGreen] = useState(false);
   const cancel = useRef(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
-    const fromUrl = q.get("name") || q.get("sail");
+    const fromUrl = q.get("name");
     const p: Profile | null = fromUrl
-      ? { name: q.get("name") ?? "", sail: q.get("sail") ?? "" }
+      ? { name: fromUrl, sail: "" }
       : load<Profile | null>(PROFILE_KEY, null) ??
         (process.env.NEXT_PUBLIC_DEFAULT_SAILOR ? { name: process.env.NEXT_PUBLIC_DEFAULT_SAILOR, sail: "" } : null);
     if (p) {
       setProfile(p);
-      setStore(load(storeKey(p), EMPTY));
+      setStore({ ...EMPTY, ...load(storeKey(p), EMPTY) });
     }
+    setShowGreen(load(GREEN_KEY, false));
     setReady(true);
   }, []);
 
@@ -80,14 +93,15 @@ export default function Dashboard() {
       cancel.current = false;
       setError(null);
       setProgress({ done: 0, total: 0, failed: 0 });
-      const prev = load(storeKey(p), EMPTY);
+      const prev = { ...EMPTY, ...load(storeKey(p), EMPTY) };
       const base = full ? { ...EMPTY, excluded: prev.excluded } : prev;
-      let current: Store = { ...base, results: [...base.results], checked: { ...base.checked } };
+      let current: Store = { ...base };
       try {
-        const res = await fetch("/api/regattas");
-        const body = (await res.json()) as { regattas?: RegattaSummary[]; error?: string };
-        if (!res.ok || !body.regattas) throw new Error(body.error ?? `HTTP ${res.status}`);
-        const todo = body.regattas.filter((r) => !r.external && !current.checked[r.id]);
+        const res = await fetch(`/api/sailor?${new URLSearchParams({ name: p.name })}`);
+        const body = (await res.json()) as { registrations?: Registration[]; error?: string };
+        if (!res.ok || !body.registrations) throw new Error(body.error ?? `HTTP ${res.status}`);
+        const key = (r: Registration) => `${r.regattaId}:${r.classId}`;
+        const todo = body.registrations.filter((r) => !current.checked[key(r)] && !current.excluded.includes(key(r)));
         setProgress({ done: 0, total: todo.length, failed: 0 });
         let done = 0;
         let failed = 0;
@@ -95,30 +109,41 @@ export default function Dashboard() {
         const worker = async () => {
           while (queue.length && !cancel.current) {
             const r = queue.shift()!;
+            const id = key(r);
             try {
-              const qs = new URLSearchParams({ date: r.date, name: p.name, sail: p.sail });
-              const rr = await fetch(`/api/regatta/${r.id}?${qs}`);
-              const data = (await rr.json()) as RegattaResponse;
-              if (!rr.ok) throw new Error(data.error);
-              const results = current.results.filter((x) => x.id !== r.id);
-              if (data.match && data.fleet && !current.excluded.includes(r.id)) {
+              let data: RegattaResponse | null = null;
+              if (r.method !== "pdf") {
+                const qs = new URLSearchParams({ class: r.classId, reg: r.registrationId, date: r.date, method: r.method ?? "" });
+                const rr = await fetch(`/api/regatta/${r.regattaId}?${qs}`);
+                data = (await rr.json()) as RegattaResponse;
+                if (!rr.ok) throw new Error(data.error);
+              }
+              const results = current.results.filter((x) => x.id !== id);
+              const unscored = current.unscored.filter((x) => x.id !== id);
+              const hasScores = data?.match && data.match.races.some((x) => x.points != null);
+              if (data && hasScores) {
                 results.push({
-                  id: r.id,
-                  name: r.name,
+                  id,
+                  regattaId: r.regattaId,
+                  club: r.club,
+                  name: r.regatta,
                   date: r.date,
                   url: r.url,
-                  fleet: data.fleet,
+                  fleet: r.className,
                   entrants: data.entrants,
                   raceCount: data.raceCount,
                   winner: data.winner,
-                  me: data.match,
+                  me: data.match!,
                 });
+              } else {
+                unscored.push({ id, name: r.regatta, date: r.date, url: r.url, fleet: r.className, club: r.club });
               }
               const final = Date.now() - Date.parse(r.date) > FINAL_AFTER_DAYS * 86400e3;
               current = {
                 ...current,
                 results,
-                checked: final ? { ...current.checked, [r.id]: true } : current.checked,
+                unscored,
+                checked: final ? { ...current.checked, [id]: true } : current.checked,
               };
             } catch {
               failed += 1;
@@ -133,7 +158,7 @@ export default function Dashboard() {
         persist(p, current);
         if (failed) setError(`${failed} regatta(s) couldn't be loaded — run "Check for new results" to retry them.`);
       } catch (e) {
-        setError(`Couldn't reach USODA results: ${(e as Error).message}`);
+        setError(`Couldn't reach Clubspot results: ${(e as Error).message}`);
       } finally {
         setProgress(null);
       }
@@ -169,6 +194,7 @@ export default function Dashboard() {
     persist(profile, {
       ...store,
       results: store.results.filter((r) => r.id !== id),
+      unscored: store.unscored.filter((r) => r.id !== id),
       excluded: [...store.excluded, id],
     });
   };
@@ -180,7 +206,7 @@ export default function Dashboard() {
       <header className="top">
         <div>
           <h1>⛵ My Sailing Stats</h1>
-          <p className="muted">USODA Optimist · Championship fleet · every regatta in the usoda.org results archive</p>
+          <p className="muted">Optimist results · USODA championships and local club regattas on Clubspot</p>
         </div>
         {profile && (
           <ProfileBar
@@ -202,8 +228,9 @@ export default function Dashboard() {
           {progress && (
             <div className="card progress" role="status">
               <div>
-                Scanning the USODA archive… {progress.done}/{progress.total} regattas ·{" "}
-                {store.results.length} found
+                {progress.total
+                  ? `Loading results… ${progress.done}/${progress.total} regattas · ${store.results.length} with scores`
+                  : "Finding every regatta you've registered for on Clubspot…"}
               </div>
               <div className="bar">
                 <span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
@@ -211,22 +238,33 @@ export default function Dashboard() {
             </div>
           )}
           {error && <div className="card warn">{error}</div>}
-          {store.results.length === 0 && !progress ? (
+          {store.results.length === 0 && store.unscored.length === 0 && !progress ? (
             <div className="card empty">
-              <h2>No Champ fleet results found yet</h2>
+              <h2>No regattas found yet</h2>
               <p className="muted">
-                Searched for <b>{profile.name || `sail #${profile.sail}`}</b>. Check the spelling matches your
-                USODA registration (e.g. &ldquo;First Last&rdquo;), or search by sail number instead.
+                Searched Clubspot for <b>{profile.name}</b>. Use your name exactly as it appears on regatta
+                registrations (&ldquo;First Last&rdquo;).
               </p>
             </div>
           ) : (
-            store.results.length > 0 && <Results results={store.results} onNotMe={notMe} />
+            <Results
+              results={store.results}
+              unscored={store.unscored}
+              showGreen={showGreen}
+              onToggleGreen={(v) => {
+                setShowGreen(v);
+                save(GREEN_KEY, v);
+              }}
+              onNotMe={notMe}
+            />
           )}
         </>
       )}
       <footer className="muted small">
-        Data: USODA results archive (usoda.org, hosted on Clubspot). Placings are computed from published
-        scores; events with Gold/Silver finals rank every Gold boat ahead of every Silver boat.
+        Data: Clubspot, which runs usoda.org and most US yacht-club regatta sites. Every regatta registered
+        under your name is included. Placings are computed from published scores; events with Gold/Silver
+        finals rank every Gold boat ahead of every Silver boat. Regattas scored on other systems (Regatta
+        Network, Sailwave PDFs, …) aren&rsquo;t included.
       </footer>
     </main>
   );
@@ -246,7 +284,6 @@ function ProfileBar(props: {
     <div className="profile">
       <div>
         <b>{profile.name || "—"}</b>
-        {profile.sail && <span className="muted"> · #{profile.sail}</span>}
         <div className="muted small">
           {props.scannedAt ? `Updated ${fmtDate(props.scannedAt)}` : "Not scanned yet"}
         </div>
@@ -270,36 +307,45 @@ function ProfileBar(props: {
 
 function Setup({ initial, onSave }: { initial: Profile; onSave: (p: Profile) => void }) {
   const [name, setName] = useState(initial.name);
-  const [sail, setSail] = useState(initial.sail);
   return (
     <form
       className="card setup"
       onSubmit={(e) => {
         e.preventDefault();
-        if (name.trim() || sail.trim()) onSave({ name: name.trim(), sail: sail.trim() });
+        if (name.trim()) onSave({ name: name.trim(), sail: "" });
       }}
     >
       <h2>Who&rsquo;s sailing?</h2>
       <p className="muted">
-        Enter your name as it appears on USODA registrations. Sail number is optional — it helps tell apart
-        sailors with the same name. Everything is stored only in this browser.
+        Enter your name as it appears on regatta registrations. We&rsquo;ll find every regatta you&rsquo;ve
+        registered for on Clubspot — USODA championships and local club regattas. Everything is stored only in
+        this browser.
       </p>
       <label>
         Sailor name
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First Last" autoFocus />
       </label>
-      <label>
-        Sail number (optional)
-        <input value={sail} onChange={(e) => setSail(e.target.value)} placeholder="e.g. 23456" inputMode="numeric" />
-      </label>
-      <button className="primary" type="submit" disabled={!name.trim() && !sail.trim()}>
-        Scan USODA archive
+      <button className="primary" type="submit" disabled={name.trim().split(/\s+/).length < 2}>
+        Find my regattas
       </button>
     </form>
   );
 }
 
-function Results({ results, onNotMe }: { results: RegattaResult[]; onNotMe: (id: string) => void }) {
+function Results(props: {
+  results: RegattaResult[];
+  unscored: Unscored[];
+  showGreen: boolean;
+  onToggleGreen: (v: boolean) => void;
+  onNotMe: (id: string) => void;
+}) {
+  const { showGreen, onNotMe } = props;
+  const greenCount = props.results.filter((r) => isGreenFleet(r.fleet)).length;
+  const results = useMemo(
+    () => props.results.filter((r) => showGreen || !isGreenFleet(r.fleet)),
+    [props.results, showGreen],
+  );
+  const unscored = props.unscored.filter((r) => showGreen || !isGreenFleet(r.fleet));
   const s = useMemo(() => summary(results), [results]);
   const sorted = useMemo(() => [...results].sort((a, b) => b.date.localeCompare(a.date)), [results]);
   const [tab, setTab] = useState<"regattas" | "races">("regattas");
@@ -307,7 +353,7 @@ function Results({ results, onNotMe }: { results: RegattaResult[]; onNotMe: (id:
   return (
     <>
       <div className="tiles">
-        <Tile label="Regattas" value={s.regattas} />
+        <Tile label="Regattas" value={s.regattas} sub={`at ${s.clubs} club${s.clubs === 1 ? "" : "s"}`} />
         <Tile label="Races sailed" value={s.races} />
         <Tile
           label="Best regatta"
@@ -319,7 +365,14 @@ function Results({ results, onNotMe }: { results: RegattaResult[]; onNotMe: (id:
         <Tile label="Top-10 race finishes" value={s.top10Races} sub={`${s.letters} letter scores`} />
       </div>
 
-      <Charts results={results} />
+      {greenCount > 0 && (
+        <label className="toggle small">
+          <input type="checkbox" checked={showGreen} onChange={(e) => props.onToggleGreen(e.target.checked)} />
+          Include Green fleet ({greenCount} regatta{greenCount === 1 ? "" : "s"})
+        </label>
+      )}
+
+      {results.length > 0 && <Charts results={results} />}
 
       <div className="tabs" role="tablist">
         <button role="tab" aria-selected={tab === "regattas"} onClick={() => setTab("regattas")}>
@@ -330,6 +383,32 @@ function Results({ results, onNotMe }: { results: RegattaResult[]; onNotMe: (id:
         </button>
       </div>
       {tab === "regattas" ? <RegattaList results={sorted} onNotMe={onNotMe} /> : <RaceTable results={results} />}
+
+      {unscored.length > 0 && (
+        <details className="card unscored">
+          <summary>
+            {unscored.length} more regatta{unscored.length === 1 ? "" : "s"} registered without online scores
+          </summary>
+          <p className="muted small">
+            Results for these were posted another way (e.g. a PDF), or you didn&rsquo;t race.
+          </p>
+          <ul>
+            {[...unscored]
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .map((u) => (
+                <li key={u.id}>
+                  <a href={u.url} target="_blank" rel="noreferrer">
+                    {u.name}
+                  </a>{" "}
+                  <span className="muted small">
+                    · {fmtDate(u.date)} · {u.fleet}
+                    {u.club ? ` · ${u.club}` : ""}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
     </>
   );
 }
@@ -355,7 +434,8 @@ function RegattaList({ results, onNotMe }: { results: RegattaResult[]; onNotMe: 
               <div className="rg-main">
                 <div className="rg-name">{r.name}</div>
                 <div className="muted small">
-                  {fmtDate(r.date)} · {r.fleet}
+                  {fmtDate(r.date)}
+                  {r.club ? ` · ${r.club}` : ""} · {r.fleet}
                   {r.me.fleet ? ` · ${r.me.fleet} fleet` : ""} · sail #{r.me.sail}
                 </div>
               </div>
