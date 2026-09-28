@@ -47,3 +47,14 @@ test("percentile", () => {
   assert.equal(percentile(11, 11), 0);
   assert.equal(percentile(1, 1), null);
 });
+
+import { isGreenFleet, isOptiFleet } from "./fleets.ts";
+
+test("fleet classification", () => {
+  for (const f of ["Opti Championship", "Optimist Red, White, and Blue (RWB)", "Opti Gold Fleet", "Optimist (White, Blue, Red)", "Green Fleet", "Opti Girls", "Optimist"]) {
+    assert.ok(isOptiFleet(f), f);
+  }
+  for (const f of ["C420", "i420", "Racing", "ILCA 6", "Club 420"]) assert.ok(!isOptiFleet(f), f);
+  assert.ok(isGreenFleet("Opti Green Fleet"));
+  assert.ok(!isGreenFleet("Opti RWB"));
+});

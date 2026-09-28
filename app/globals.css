@@ -148,3 +148,4 @@ footer { margin-top: 16px; }
 .unscored summary { cursor: pointer; font-weight: 600; }
 .unscored ul { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .unscored p { margin: 8px 0 0; }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px 20px; }

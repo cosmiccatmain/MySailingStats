@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Charts, ordinal } from "./Charts";
 import { percentile, type Standing } from "@/lib/standings";
-import { allRaces, isGreenFleet, summary, type RegattaResult } from "@/lib/stats";
+import { isGreenFleet, isOptiFleet } from "@/lib/fleets";
+import { allRaces, summary, type RegattaResult } from "@/lib/stats";
 
 type Profile = { name: string; sail: string };
 type Registration = {
@@ -34,7 +35,8 @@ type Store = {
 };
 
 const PROFILE_KEY = "mss:profile";
-const GREEN_KEY = "mss:showGreen";
+const FILTER_KEY = "mss:filters";
+type Filters = { green: boolean; other: boolean };
 const storeKey = (p: Profile) => `mss:v2:${p.name.trim().toLowerCase()}`;
 const EMPTY: Store = { results: [], unscored: [], checked: {}, excluded: [], scannedAt: null };
 const FINAL_AFTER_DAYS = 14;
@@ -65,7 +67,7 @@ export default function Dashboard() {
   const [store, setStore] = useState<Store>(EMPTY);
   const [progress, setProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showGreen, setShowGreen] = useState(false);
+  const [filters, setFilters] = useState<Filters>({ green: false, other: false });
   const cancel = useRef(false);
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function Dashboard() {
       setProfile(p);
       setStore({ ...EMPTY, ...load(storeKey(p), EMPTY) });
     }
-    setShowGreen(load(GREEN_KEY, false));
+    setFilters(load(FILTER_KEY, { green: false, other: false }));
     setReady(true);
   }, []);
 
@@ -251,10 +253,10 @@ export default function Dashboard() {
             <Results
               results={store.results}
               unscored={store.unscored}
-              showGreen={showGreen}
-              onToggleGreen={(v) => {
-                setShowGreen(v);
-                save(GREEN_KEY, v);
+              filters={filters}
+              onFilters={(f) => {
+                setFilters(f);
+                save(FILTER_KEY, f);
               }}
               onNotMe={notMe}
             />
@@ -336,17 +338,23 @@ function Setup({ initial, onSave }: { initial: Profile; onSave: (p: Profile) => 
 function Results(props: {
   results: RegattaResult[];
   unscored: Unscored[];
-  showGreen: boolean;
-  onToggleGreen: (v: boolean) => void;
+  filters: Filters;
+  onFilters: (f: Filters) => void;
   onNotMe: (id: string) => void;
 }) {
-  const { showGreen, onNotMe } = props;
-  const greenCount = props.results.filter((r) => isGreenFleet(r.fleet)).length;
+  const { filters, onNotMe } = props;
+  // Default view: Optimist racing fleets only (no Green fleet, no other boats like 420s).
+  const visible = (fleet: string) =>
+    isOptiFleet(fleet) ? filters.green || !isGreenFleet(fleet) : filters.other;
+  const all = [...props.results, ...props.unscored];
+  const greenCount = all.filter((r) => isOptiFleet(r.fleet) && isGreenFleet(r.fleet)).length;
+  const otherCount = all.filter((r) => !isOptiFleet(r.fleet)).length;
   const results = useMemo(
-    () => props.results.filter((r) => showGreen || !isGreenFleet(r.fleet)),
-    [props.results, showGreen],
+    () => props.results.filter((r) => visible(r.fleet)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [props.results, filters],
   );
-  const unscored = props.unscored.filter((r) => showGreen || !isGreenFleet(r.fleet));
+  const unscored = props.unscored.filter((r) => visible(r.fleet));
   const s = useMemo(() => summary(results), [results]);
   const sorted = useMemo(() => [...results].sort((a, b) => b.date.localeCompare(a.date)), [results]);
   const [tab, setTab] = useState<"regattas" | "races">("regattas");
@@ -366,11 +374,29 @@ function Results(props: {
         <Tile label="Top-10 race finishes" value={s.top10Races} sub={`${s.letters} letter scores`} />
       </div>
 
-      {greenCount > 0 && (
-        <label className="toggle small">
-          <input type="checkbox" checked={showGreen} onChange={(e) => props.onToggleGreen(e.target.checked)} />
-          Include Green fleet ({greenCount} regatta{greenCount === 1 ? "" : "s"})
-        </label>
+      {(greenCount > 0 || otherCount > 0) && (
+        <div className="toggles">
+          {greenCount > 0 && (
+            <label className="toggle small">
+              <input
+                type="checkbox"
+                checked={filters.green}
+                onChange={(e) => props.onFilters({ ...filters, green: e.target.checked })}
+              />
+              Include Green fleet ({greenCount})
+            </label>
+          )}
+          {otherCount > 0 && (
+            <label className="toggle small">
+              <input
+                type="checkbox"
+                checked={filters.other}
+                onChange={(e) => props.onFilters({ ...filters, other: e.target.checked })}
+              />
+              Include other boats, e.g. 420 ({otherCount})
+            </label>
+          )}
+        </div>
       )}
 
       {results.length > 0 && <Charts results={results} />}

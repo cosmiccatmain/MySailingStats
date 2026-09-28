@@ -103,5 +103,3 @@ export function byYear(results: RegattaResult[]) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([year, ps]) => ({ year, avg: ps.reduce((a, b) => a + b, 0) / ps.length, regattas: ps.length }));
 }
-
-export const isGreenFleet = (fleet: string) => /green/i.test(fleet);
