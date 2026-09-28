@@ -44,17 +44,24 @@ export async function listRegattas(): Promise<RegattaSummary[]> {
     flow: "member_portal",
   });
   const now = Date.now();
-  const seen = new Set<string>();
-  return (data.result ?? [])
-    .filter((e) => e.ts <= now && !NON_RACING.test(e.title) && !seen.has(e.id) && seen.add(e.id))
-    .map((e) => ({
-      id: e.id,
+  const byId = new Map<string, RegattaSummary>();
+  for (const e of data.result ?? []) {
+    if (e.ts > now || NON_RACING.test(e.title)) continue;
+    const ext = e.external_regatta_url || null;
+    // Many "external" entries point at the host club's Clubspot site
+    // (theclubspot.com/regatta/<id>, abyc.org/regatta/<id>, …) — same API, so follow them.
+    const hosted = ext?.match(/\/regatta\/([A-Za-z0-9]{10})(?:[/?#]|$)/)?.[1];
+    const id = hosted ?? e.id;
+    if (byId.has(id)) continue;
+    byId.set(id, {
+      id,
       name: e.title,
       date: new Date(e.ts).toISOString(),
-      url: `https://www.usoda.org/regatta/${e.id}/results`,
-      external: e.external_regatta_url || null,
-    }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+      url: hosted ? `${ext!.split(/[?#]/)[0].replace(/\/$/, "")}/results` : `https://www.usoda.org/regatta/${id}/results`,
+      external: hosted ? null : ext,
+    });
+  }
+  return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export async function listBoatClasses(regattaId: string): Promise<BoatClass[]> {
