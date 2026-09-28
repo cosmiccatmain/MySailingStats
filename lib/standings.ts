@@ -103,36 +103,6 @@ function byScore(a: RawEntry, b: RawEntry): number {
 const hasScores = (e: RawEntry) => (e.scoring_data ?? []).some((s) => num(s.points) !== null);
 
 /**
- * Clubspot scores a race a boat has no result for as DNC (entries + 1 points)
- * — "unscored boats: treat as DNC" — but the raw data only lists races the boat
- * has a score in, and its `net` ignores the gaps. Fill them in and recompute
- * net with the class's discard count, as the official results page does.
- */
-export function fillMissingRaces(entries: RawEntry[]): RawEntry[] {
-  const raceNumbers = [...new Set(entries.flatMap((e) => (e.scoring_data ?? []).map((s) => s.race_number)))];
-  const dnc = entries.length + 1;
-  const discards = Math.max(0, ...entries.map((e) => (e.scoring_data ?? []).filter((s) => s.throwout).length));
-  return entries.map((e) => {
-    const have = new Set((e.scoring_data ?? []).map((s) => s.race_number));
-    const missing = raceNumbers.filter((n) => !have.has(n));
-    if (!missing.length) return e;
-    const data: RawScore[] = [
-      ...(e.scoring_data ?? []).map((s) => ({ ...s, throwout: false })),
-      ...missing.map((n) => ({ race_number: n, points: dnc, letterScore: "DNC", scores: null, throwout: false })),
-    ];
-    // Discard the worst `discards` scores.
-    const worst = data
-      .map((s, i) => ({ i, p: num(s.points) ?? 0 }))
-      .sort((a, b) => b.p - a.p || b.i - a.i)
-      .slice(0, discards);
-    worst.forEach(({ i }) => (data[i].throwout = true));
-    const total = data.reduce((sum, s) => sum + (num(s.points) ?? 0), 0);
-    const net = total - worst.reduce((sum, w) => sum + w.p, 0);
-    return { ...e, scoring_data: data, total, net };
-  });
-}
-
-/**
  * Order finals fleets into tiers (Gold, Silver, …). Boats were assigned to
  * finals fleets by their qualifying-series rank, so we rank everyone on
  * qualifying points (races sailed outside their finals fleet) and order the
@@ -183,7 +153,7 @@ export function finalsTiers(fleets: RawEntry[][], finalsOf: (e: RawEntry) => str
  * regional and club events (see README).
  */
 export function computeStandings(entries: RawEntry[], scoringMethod?: string): Standing[] {
-  const scored = fillMissingRaces(entries.filter(hasScores));
+  const scored = entries.filter(hasScores);
   const finalsOf = (e: RawEntry) => e.registrationObject.assignments?.finals;
   const withFinals = scored.filter((e) => finalsOf(e)).length;
   const useFleets =
