@@ -144,7 +144,7 @@ export function Compare(props: { meName: string; mine: LoadedRegatta[] }) {
             <VsRow label="Head-to-head races (same start)" a={h2h?.racesA} b={h2h?.racesB} better="high" />
             <VsRow label="Current rating" a={last(myHist)} b={last(theirHist)} better="high" />
             <VsRow label="Best performance rating" a={bestPerf(myHist)} b={bestPerf(theirHist)} better="high" />
-            <VsRow label="Regattas on Clubspot" a={props.mine.length} b={other?.count} />
+            <VsRow label="Optimist regattas" a={props.mine.length} b={other?.regattas.length} />
             <VsRow
               label="Average fleet beaten"
               a={myPcts.length ? Math.round(myPcts.reduce((x, y) => x + y, 0) / myPcts.length) : null}

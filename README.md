@@ -14,13 +14,37 @@ public API. The app calls the same endpoints server-side (`lib/clubspot.ts`):
 | Scores for the class (fleet) they sailed | `results.theclubspot.com/clubspot-results-v3` (≤ 2024) / `-v5` (2025+) |
 
 The sailor's row is matched by registration id, so there's no guessing between same-named sailors in one
-event. Clubspot returns raw race scores without placings, so `lib/standings.ts` ranks them: with
-Gold/Silver finals every boat in a better finals fleet places ahead of every boat in a worse one,
-otherwise by net then total points.
+event. Clubspot returns raw race scores without placings, so `lib/standings.ts` ranks them the way
+Clubspot's results pages do:
 
-Green-fleet regattas are hidden by default (toggle on the page). Registrations without online scores
-(PDF results, didn't race) are listed separately. Regattas scored outside Clubspot (Regatta Network,
-Sailwave) aren't covered.
+- events with qualifying + finals: every boat in a better finals tier places ahead of every boat in a
+  worse one. Tiers are found from qualifying ranks, so parallel splits (e.g. "Silver A/B/C" at the 2025
+  Nationals) are merged and scored together;
+- within a tier, by net points, ties broken with RRS A8 (best scores excluding discards, then last race);
+- boats with no scored race are left out.
+
+**Verified** boat-for-boat against Clubspot's rendered results (headless browser) for 7 events — 2024 and
+2025 Nationals, 2024 Atlantic Coast Gold, Gibson Island RWB, AYC Junior Annual RWB, SSA Sandy MacVickar,
+Wianno YC: 929 of 931 boats identical; the 2 others are all-DNC boats whose order is arbitrary.
+
+## Features
+
+- **Overview** — stat tiles, automatic insights, charts: results by fleet level (performance rating /
+  % beaten / boats beaten), Championship vs Green, rating over time, every race, early vs late races,
+  finish distribution, by season, and a fleet-level summary table.
+- **Ratings** (`lib/rating.ts`) — multi-player Elo over every race of every fleet loaded: each race is a
+  set of head-to-heads between boats in the same start. New sailors are seeded by fleet level
+  (Championship 1500, RWB 1300, Open 1250, Green 1000), so a mid-fleet Championship result rates above a
+  Green fleet win. A per-regatta performance rating = field strength ± 400 × (share of head-to-heads won − ½).
+- **Regattas** — every regatta with race-by-race scores and the full leaderboard (you, club-mates, the
+  boats around you), sortable by date, rating or finish.
+- **Races** — every race you've sailed; CSV download.
+- **Compare** — your most frequent rivals with win/loss records; compare with any sailor (their full
+  Clubspot history is loaded): head-to-head regattas and same-start races, ratings over time, shared
+  regattas with both boats highlighted.
+- **Clubs** — search any club seen in your regattas: team score (sum of the best 3 places) and rank at
+  each regatta, full club standings, club performance over time, and the club's sailors.
+- Filters: season, Green fleet, other boats (420s etc.).
 
 ## Using it
 
