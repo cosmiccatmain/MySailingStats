@@ -1,4 +1,4 @@
-import { fetchResults, listBoatClasses, pickChampClass } from "@/lib/clubspot";
+import { fetchResults, listBoatClasses, pickChampClasses } from "@/lib/clubspot";
 import { findSailor } from "@/lib/standings";
 
 export const maxDuration = 60;
@@ -14,15 +14,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const sail = q.get("sail") ?? "";
 
   try {
-    const classes = await listBoatClasses(id);
-    const champ = pickChampClass(classes);
-    if (!champ) {
+    const classes = pickChampClasses(await listBoatClasses(id));
+    if (!classes.length) {
       return cached({ id, fleet: null, entrants: 0, raceCount: 0, match: null, winner: null });
     }
-    const { standings, raceCount } = await fetchResults(id, champ, date);
-    const match = findSailor(standings, name, sail);
-    const winner = standings[0] ? { name: standings[0].name, net: standings[0].net } : null;
-    return cached({ id, fleet: champ.name, entrants: standings.length, raceCount, match, winner });
+    // Look through each champ-level class; report the one the sailor raced in.
+    const all = await Promise.all(classes.map((c) => fetchResults(id, c, date).then((r) => ({ c, ...r }))));
+    const found = all.map((r) => ({ ...r, match: findSailor(r.standings, name, sail) })).find((r) => r.match);
+    const pick = found ?? all[0];
+    const top = pick.standings[0];
+    return cached({
+      id,
+      fleet: pick.c.name,
+      entrants: pick.standings.length,
+      raceCount: pick.raceCount,
+      match: found?.match ?? null,
+      winner: top ? { name: top.name, net: top.net } : null,
+    });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 502 });
   }

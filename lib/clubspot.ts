@@ -81,14 +81,18 @@ export async function listBoatClasses(regattaId: string): Promise<BoatClass[]> {
     .map((c) => ({ id: c.objectId, name: c.name, method: c.scoring?.method ?? null }));
 }
 
-/** The Championship fleet: named "champ…" and not the Green (beginner) fleet. */
-export function pickChampClass(classes: BoatClass[]): BoatClass | null {
-  const racing = classes.filter((c) => !/green|withdrawn|removed|spectator|coach|vendor/i.test(c.name));
-  return (
-    racing.find((c) => /champ/i.test(c.name)) ??
-    racing.find((c) => /\b(opti|optimist)\b/i.test(c.name) && !/team/i.test(c.name)) ??
-    null
+/**
+ * The Championship-fleet classes. Usually one "Opti Championship" class; some
+ * host clubs instead split the champ fleet into e.g. "Opti Gold"/"Opti Silver".
+ * Green (beginner) fleet and team racing are never included.
+ */
+export function pickChampClasses(classes: BoatClass[]): BoatClass[] {
+  const racing = classes.filter(
+    (c) => !/green|withdrawn|removed|spectator|coach|vendor|team ?rac|parent/i.test(c.name),
   );
+  const champ = racing.filter((c) => /champ/i.test(c.name));
+  if (champ.length) return champ;
+  return racing.filter((c) => /\b(opti|optimist)\b/i.test(c.name) || racing.length === 1);
 }
 
 export async function fetchResults(
