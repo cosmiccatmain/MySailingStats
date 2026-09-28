@@ -49,58 +49,75 @@ export function RegattaList(props: {
         const pct = percentile(r.me.place, r.entrants);
         const perf = props.perf.get(r.id);
         return (
-          <details key={r.id} className="card regatta">
+          <details key={r.id} className={`card regatta tier-${fleetTier(r.fleet)}`}>
             <summary>
               <div className="rg-main">
                 <div className="rg-name">
-                  {r.name} <TierBadge fleet={r.fleet} />
+                  {r.name}
+                  <TierBadge fleet={r.fleet} />
                 </div>
-                <div className="muted small">
+                <div className="rg-meta">
                   {fmtDate(r.date)}
-                  {r.club ? ` · ${r.club}` : ""} · {r.fleet}
+                  {r.club ? ` · ${r.club}` : ""}
                   {r.me.fleet ? ` · ${r.me.fleet} fleet` : ""}
-                  {r.me.sail ? ` · #${r.me.sail}` : ""}
                 </div>
               </div>
               <div className="rg-place">
-                <div className="big">
+                <div className="place">
                   {ordinal(r.me.place)}
-                  <span className="muted small"> / {r.entrants}</span>
+                  <small> / {r.entrants}</small>
                 </div>
-                <div className="muted small">
-                  {r.me.net != null ? `${r.me.net} pts` : ""}
-                  {pct != null ? ` · beat ${Math.round(pct)}%` : ""}
-                  {perf ? ` · rating ${Math.round(perf.performance)}` : ""}
+                <div className="pctbar" title={pct != null ? `Beat ${Math.round(pct)}% of the fleet` : undefined}>
+                  <span style={{ width: `${pct ?? 0}%` }} />
                 </div>
               </div>
             </summary>
-            <div className="races">
-              {r.me.races.map((race) => (
-                <div key={race.race} className={`race${race.drop ? " drop" : ""}${race.letter ? " letter" : ""}`} title={race.drop ? "Discarded" : undefined}>
-                  <div className="muted small">R{race.race}</div>
-                  <div className="race-pts">
-                    {race.drop ? "(" : ""}
-                    {race.letter ?? race.points ?? "–"}
-                    {race.drop ? ")" : ""}
+            <div className="rg-body">
+              <div className="facts">
+                {pct != null && (
+                  <span>
+                    Beat <b>{Math.round(pct)}%</b>
+                  </span>
+                )}
+                {r.me.net != null && (
+                  <span>
+                    <b>{r.me.net}</b> pts net
+                  </span>
+                )}
+                {perf && (
+                  <span>
+                    Rating <b>{Math.round(perf.performance)}</b> vs field <b>{Math.round(perf.fieldStrength)}</b>
+                  </span>
+                )}
+                <span>{r.fleet}</span>
+                {r.me.sail && <span>#{r.me.sail}</span>}
+              </div>
+              <div className="races">
+                {r.me.races.map((race) => (
+                  <div key={race.race} className={`race${race.drop ? " drop" : ""}${race.letter ? " letter" : ""}`} title={race.drop ? "Discarded" : undefined}>
+                    <div className="muted tiny">R{race.race}</div>
+                    <div className="race-pts">
+                      {race.drop ? "(" : ""}
+                      {race.letter ?? race.points ?? "–"}
+                      {race.drop ? ")" : ""}
+                    </div>
                   </div>
-                  {race.starters ? <div className="muted tiny">of {race.starters}</div> : null}
-                </div>
-              ))}
-            </div>
-            {props.fields[r.id] && <Leaderboard field={props.fields[r.id]} meId={r.me.id} myClub={r.me.club} />}
-            <div className="rg-foot small">
-              <span className="muted">
-                {r.winner ? `Winner: ${r.winner.name}${r.winner.net != null ? ` (${r.winner.net})` : ""}` : ""}
-                {perf ? ` · field strength ${Math.round(perf.fieldStrength)}` : ""}
-              </span>
-              <span className="btns">
-                <a href={r.url} target="_blank" rel="noreferrer">
-                  Official results ↗
-                </a>
-                <button className="link" onClick={() => props.onNotMe(r.id)} title="Remove a wrong name match">
-                  Not me
-                </button>
-              </span>
+                ))}
+              </div>
+              {props.fields[r.id] && <Leaderboard field={props.fields[r.id]} meId={r.me.id} myClub={r.me.club} />}
+              <div className="rg-foot">
+                <span className="muted">
+                  {r.winner ? `Won by ${r.winner.name}${r.winner.net != null ? ` (${r.winner.net} pts)` : ""}` : ""}
+                </span>
+                <span className="btns">
+                  <a href={r.url} target="_blank" rel="noreferrer">
+                    Official results ↗
+                  </a>
+                  <button className="link muted" onClick={() => props.onNotMe(r.id)} title="Remove a wrong name match">
+                    Not me
+                  </button>
+                </span>
+              </div>
             </div>
           </details>
         );
@@ -109,24 +126,18 @@ export function RegattaList(props: {
   );
 }
 
-/** The whole fleet: top 5, the boats around you, and your club-mates — or everyone. */
+/** The whole fleet: the podium and the boats around you — or everyone (club-mates highlighted). */
 export function Leaderboard(props: { field: FieldRow[]; meId: string; myClub: string; highlightKey?: (row: FieldRow) => boolean }) {
   const [all, setAll] = useState(false);
   const me = props.field.find((r) => r.id === props.meId);
   const mine = clubKey(props.myClub);
   const rows = all
     ? props.field
-    : props.field.filter(
-        (r) =>
-          r.p <= 5 ||
-          (me && Math.abs(r.p - me.p) <= 3) ||
-          (mine && clubKey(r.c) === mine) ||
-          props.highlightKey?.(r),
-      );
+    : props.field.filter((r) => r.p <= 3 || (me && Math.abs(r.p - me.p) <= 2) || props.highlightKey?.(r));
   const raceCount = Math.max(0, ...props.field.map((r) => r.r.length));
   let prev = 0;
   return (
-    <div className="leaderboard">
+    <div className="leaderboard table-wrap">
       <div className="table-wrap">
         <table>
           <thead>

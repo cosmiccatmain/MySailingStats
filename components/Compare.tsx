@@ -170,7 +170,7 @@ export function Compare(props: { meName: string; mine: LoadedRegatta[] }) {
           )}
           <div className="list">
             {h2h?.regattas.map((g) => (
-              <details key={g.id} className="card regatta">
+              <details key={g.id} className={`card regatta tier-${fleetTier(g.fleet)}`}>
                 <summary>
                   <div className="rg-main">
                     <div className="rg-name">

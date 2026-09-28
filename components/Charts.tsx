@@ -138,10 +138,10 @@ export function RegattaChart({ results, perf }: { results: RegattaResult[]; perf
   const present = TIERS.filter((t) => points.some((p) => p.tier === t && Number.isFinite(p.y)));
   const sub =
     metric === "perf"
-      ? "Performance rating accounts for how strong each fleet was — Championship results count for more than Green"
+      ? "Adjusted for fleet strength — Championship results count for more"
       : metric === "pct"
-        ? "Share of the fleet you beat (100% = won). Doesn't account for fleet strength"
-        : "Number of boats that finished behind you";
+        ? "Share of the fleet you beat (100% = won)"
+        : "Boats that finished behind you";
   return (
     <Card title="Regatta results by fleet level" sub={sub} wide action={<Seg value={metric} options={METRICS} onChange={setMetric} />}>
       <ResponsiveContainer width="100%" height={300}>
@@ -198,8 +198,8 @@ export function RatingChart(props: { history: RatingPoint[]; other?: { name: str
       title="Rating over time"
       sub={
         props.other
-          ? "Both sailors' ratings, updated race by race from every boat you each raced"
-          : "Updated race by race: beating strong sailors raises it more than beating beginners. Dots show fleet level"
+          ? "Both sailors on the same scale"
+          : "Beating strong sailors counts more than beating beginners"
       }
       wide={!!props.other}
     >
@@ -253,7 +253,7 @@ export function TierChart({ tiers }: { tiers: TierSummary[] }) {
   return (
     <Card
       title="Championship vs Green"
-      sub={metric === "perf" ? "Average performance rating by fleet level (accounts for fleet strength)" : "Average share of the fleet beaten by fleet level (raw)"}
+      sub={metric === "perf" ? "Average rating by fleet level" : "Average share of the fleet beaten"}
       action={
         <Seg
           value={metric}
@@ -304,7 +304,7 @@ export function RaceChart({ results }: { results: RegattaResult[] }) {
     starters: r.starters,
   }));
   return (
-    <Card title="Every race" sub="Share of the start beaten in each race, with a 10-race rolling average">
+    <Card title="Every race" sub="Share of the start beaten, with a 10-race average">
       <ResponsiveContainer width="100%" height={260}>
         <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           {grid}
@@ -332,7 +332,7 @@ export function RaceNumberChart({ results }: { results: RegattaResult[] }) {
   const data = byRaceNumber(results);
   const mean = data.length ? data.reduce((a, b) => a + b.avg * b.n, 0) / data.reduce((a, b) => a + b.n, 0) : 0;
   return (
-    <Card title="Early vs late races" sub="Average share of the start beaten by race number — do you start fast or finish strong?">
+    <Card title="Early vs late races" sub="Start fast or finish strong?">
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           {grid}
@@ -350,7 +350,7 @@ export function RaceNumberChart({ results }: { results: RegattaResult[] }) {
 export function DistributionChart({ results }: { results: RegattaResult[] }) {
   const dist = finishDistribution(allRaces(results));
   return (
-    <Card title="Finish distribution" sub="Where your race finishes land in the start">
+    <Card title="Finish distribution" sub="Where your finishes land in the start">
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={dist} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
           {grid}

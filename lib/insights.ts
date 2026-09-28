@@ -46,26 +46,28 @@ export function byRaceNumber(results: RegattaResult[]) {
     .map(([race, ps]) => ({ race: `R${race}`, avg: avg(ps)!, n: ps.length }));
 }
 
-export function insights(results: RegattaResult[], history: RatingPoint[]): string[] {
-  const out: string[] = [];
+export type Insight = { icon: string; text: string };
+
+export function insights(results: RegattaResult[], history: RatingPoint[]): Insight[] {
+  const out: Insight[] = [];
   if (!results.length) return out;
   const tiers = tierSummaries(results, history);
   const champ = tiers.find((t) => t.tier === "champ");
   const green = tiers.find((t) => t.tier === "green");
   if (champ?.avgPerformance != null && green?.avgPerformance != null) {
     const d = Math.round(champ.avgPerformance - green.avgPerformance);
-    out.push(
+    out.push({ icon: "⚖️", text:
       d > 0
-        ? `Your Championship-fleet results rate ${d} points higher than your Green fleet results — the fleets are much stronger, so a mid-fleet Championship finish is worth more than a Green fleet podium.`
-        : `Your Green fleet results still rate higher than your Championship results (${-d} points) — Championship fleets are much tougher, so keep going.`,
-    );
+        ? `Championship results rate ${d} points above your Green fleet results — tougher fleets count for more.`
+        : `Green fleet results still rate ${-d} points above Championship — those fleets are much tougher. Keep going.`
+    });
   }
   const byPerf = history.slice().sort((a, b) => b.performance - a.performance);
   const best = byPerf[0] && results.find((r) => r.id === byPerf[0].regattaId);
   if (best) {
-    out.push(
-      `Best performance: ${best.name} (${TIER_LABEL[fleetTier(best.fleet)]}) — ${best.me.place} of ${best.entrants}, rated ${Math.round(byPerf[0].performance)}.`,
-    );
+    out.push({ icon: "🏆", text:
+      `Best performance: ${best.me.place} of ${best.entrants} at ${best.name} (${TIER_LABEL[fleetTier(best.fleet)]}), rated ${Math.round(byPerf[0].performance)}.`
+    });
   }
   const chrono = history.slice().sort((a, b) => a.date.localeCompare(b.date));
   if (chrono.length >= 3) {
@@ -73,7 +75,7 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): stri
     const yearAgo = chrono.filter((h) => Date.parse(h.date) <= Date.parse(last.date) - 365 * 864e5).pop() ?? chrono[0];
     const d = Math.round(last.after - yearAgo.before);
     if (Math.abs(d) >= 10) {
-      out.push(`Your rating has ${d > 0 ? "climbed" : "dropped"} ${Math.abs(d)} points since ${new Date(yearAgo.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}.`);
+      out.push({ icon: "📈", text: `Your rating has ${d > 0 ? "climbed" : "dropped"} ${Math.abs(d)} points since ${new Date(yearAgo.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}.` });
     }
   }
   const races = allRaces(results);
@@ -82,25 +84,25 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): stri
     const top = byRace.slice().sort((a, b) => b.avg - a.avg)[0];
     const first = byRace[0];
     const later = avg(byRace.slice(-3).map((x) => x.avg))!;
-    out.push(
+    out.push({ icon: "⏱️", text:
       later > first.avg + 5
-        ? `You get stronger as regattas go on: ${Math.round(first.avg)}% of the fleet beaten in race 1 vs ${Math.round(later)}% in the last races. Best race number: ${top.race}.`
+        ? `You finish strong: ${Math.round(first.avg)}% of the fleet beaten in race 1, ${Math.round(later)}% in the last races.`
         : first.avg > later + 5
-          ? `You start fast: ${Math.round(first.avg)}% beaten in race 1 vs ${Math.round(later)}% in the last races — finishing strong is an opportunity.`
-          : `You're consistent through a regatta — best race number on average is ${top.race} (${Math.round(top.avg)}% beaten).`,
-    );
+          ? `You start fast — ${Math.round(first.avg)}% beaten in race 1 vs ${Math.round(later)}% late in regattas. Finishing strong is the opportunity.`
+          : `Consistent through a regatta — your best race number is ${top.race} (${Math.round(top.avg)}% beaten).`
+    });
   }
   const penalties = races.filter((r) => r.letter && /^(OCS|UFD|BFD|ZFP|SCP)$/i.test(r.letter)).length;
   const scoredRaces = races.filter((r) => r.points != null).length;
   if (penalties) {
-    out.push(`${penalties} start penalt${penalties === 1 ? "y" : "ies"} (OCS/UFD/BFD) in ${scoredRaces} races — ${((penalties / scoredRaces) * 100).toFixed(1)}% of starts.`);
+    out.push({ icon: "🚩", text: `${penalties} start penalt${penalties === 1 ? "y" : "ies"} (OCS/UFD/BFD) in ${scoredRaces} races — ${((penalties / scoredRaces) * 100).toFixed(1)}% of starts.` });
   } else if (scoredRaces >= 10) {
-    out.push(`No start penalties (OCS/UFD/BFD) in ${scoredRaces} races.`);
+    out.push({ icon: "🚩", text: `No start penalties (OCS/UFD/BFD) in ${scoredRaces} races.` });
   }
   const pcts = races.map((r) => r.pct).filter((x): x is number => x != null);
   if (pcts.length >= 10) {
     const topQ = pcts.filter((p) => p >= 75).length;
-    out.push(`${Math.round((topQ / pcts.length) * 100)}% of your races finished in the top quarter of the start.`);
+    out.push({ icon: "🎯", text: `${Math.round((topQ / pcts.length) * 100)}% of your races finished in the top quarter of the start.` });
   }
   return out;
 }

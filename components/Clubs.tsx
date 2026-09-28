@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TierBadge } from "./Regattas";
 import { allClubs, clubHistory, clubKey, clubTeams, TEAM_SIZE, type LoadedRegatta } from "@/lib/analysis";
+import { fleetTier } from "@/lib/fleets";
 import { fmtDate, ordinal } from "@/lib/format";
 import { sailorKey } from "@/lib/rating";
 import { percentile } from "@/lib/standings";
@@ -119,7 +120,7 @@ export function Clubs(props: { regattas: LoadedRegatta[]; myClub: string; meName
           <h3 className="section-title">Team results</h3>
           <div className="list">
             {history.map((h) => (
-              <details key={h.regatta.id} className="card regatta">
+              <details key={h.regatta.id} className={`card regatta tier-${fleetTier(h.regatta.fleet)}`}>
                 <summary>
                   <div className="rg-main">
                     <div className="rg-name">
