@@ -58,3 +58,23 @@ test("fleet classification", () => {
   assert.ok(isGreenFleet("Opti Green Fleet"));
   assert.ok(!isGreenFleet("Opti RWB"));
 });
+
+test("races a boat has no score for count as DNC (entries + 1)", () => {
+  const full = (id: string, pts: number[]): RawEntry => ({
+    registrationObject: { objectId: id, firstName: id, lastName: "x" },
+    scoring_data: pts.map((p, i) => ({ race_number: i + 1, points: p, scores: 3 })),
+    net: pts.reduce((a, b) => a + b, 0),
+    total: pts.reduce((a, b) => a + b, 0),
+  });
+  const partial: RawEntry = {
+    registrationObject: { objectId: "p", firstName: "p", lastName: "x" },
+    scoring_data: [{ race_number: 1, points: 1, scores: 3 }],
+    net: 1,
+    total: 1,
+  };
+  const s = computeStandings([full("a", [2, 2, 2]), full("b", [3, 3, 3]), partial]);
+  const p = s.find((x) => x.id === "p")!;
+  assert.equal(p.net, 1 + 4 + 4); // two DNCs at 3 boats + 1
+  assert.deepEqual(s.map((x) => x.id), ["a", "p", "b"]);
+  assert.equal(p.races.filter((r) => r.letter === "DNC").length, 2);
+});
