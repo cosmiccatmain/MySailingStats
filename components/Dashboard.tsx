@@ -58,6 +58,35 @@ function save(key: string, v: unknown) {
   }
 }
 
+class StaleAppError extends Error {
+  constructor() {
+    super("the app was updated — please reload the page");
+  }
+}
+
+/** fetch + JSON that survives non-JSON replies (e.g. a page left open across an app update). */
+async function getJson<T>(url: string): Promise<{ ok: boolean; status: number; body: T & { error?: string } }> {
+  const res = await fetch(url, { cache: "no-store" });
+  const text = await res.text();
+  try {
+    return { ok: res.ok, status: res.status, body: JSON.parse(text) };
+  } catch {
+    if (res.status === 404) throw new StaleAppError();
+    throw new Error(`unexpected reply from server (HTTP ${res.status}) — try reloading the page`);
+  }
+}
+
+function recentlyReloaded(): boolean {
+  try {
+    const last = Number(sessionStorage.getItem("mss:reloadedAt") ?? 0);
+    if (Date.now() - last < 60_000) return true;
+    sessionStorage.setItem("mss:reloadedAt", String(Date.now()));
+  } catch {
+    /* storage blocked: allow the reload */
+  }
+  return false;
+}
+
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -99,8 +128,10 @@ export default function Dashboard() {
       const base = full ? { ...EMPTY, excluded: prev.excluded } : prev;
       let current: Store = { ...base };
       try {
-        const res = await fetch(`/api/sailor?${new URLSearchParams({ name: p.name })}`);
-        const body = (await res.json()) as { registrations?: Registration[]; error?: string };
+        const res = await getJson<{ registrations?: Registration[] }>(
+          `/api/sailor?${new URLSearchParams({ name: p.name })}`,
+        );
+        const body = res.body;
         if (!res.ok || !body.registrations) throw new Error(body.error ?? `HTTP ${res.status}`);
         const key = (r: Registration) => `${r.regattaId}:${r.classId}`;
         const todo = body.registrations.filter((r) => !current.checked[key(r)] && !current.excluded.includes(key(r)));
@@ -117,8 +148,8 @@ export default function Dashboard() {
               // "pdf" / "external_link" classes publish results outside Clubspot.
               if (r.method !== "pdf" && r.method !== "external_link") {
                 const qs = new URLSearchParams({ class: r.classId, reg: r.registrationId, date: r.date, method: r.method ?? "" });
-                const rr = await fetch(`/api/regatta/${r.regattaId}?${qs}`);
-                data = (await rr.json()) as RegattaResponse;
+                const rr = await getJson<RegattaResponse>(`/api/regatta/${r.regattaId}?${qs}`);
+                data = rr.body;
                 if (!rr.ok) throw new Error(data.error);
               }
               const results = current.results.filter((x) => x.id !== id);
@@ -148,7 +179,8 @@ export default function Dashboard() {
                 unscored,
                 checked: final ? { ...current.checked, [id]: true } : current.checked,
               };
-            } catch {
+            } catch (e) {
+              if (e instanceof StaleAppError) throw e;
               failed += 1;
             }
             done += 1;
@@ -161,7 +193,12 @@ export default function Dashboard() {
         persist(p, current);
         if (failed) setError(`${failed} regatta(s) couldn't be loaded — run "Check for new results" to retry them.`);
       } catch (e) {
-        setError(`Couldn't reach Clubspot results: ${(e as Error).message}`);
+        if (e instanceof StaleAppError && !recentlyReloaded()) {
+          // This tab is running an older build than the server: reload to pick up the new one.
+          window.location.reload();
+          return;
+        }
+        setError(`Couldn't load results from Clubspot: ${(e as Error).message}`);
       } finally {
         setProgress(null);
       }

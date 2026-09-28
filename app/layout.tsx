@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "My Sailing Stats",
-  description: "USODA Optimist Championship fleet results, race by race.",
+  description: "Optimist regatta results — USODA championships and local club regattas — race by race.",
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
