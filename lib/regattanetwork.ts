@@ -49,7 +49,7 @@ export async function searchRegattaNetwork(tokens: string[]): Promise<RNEvent[]>
     const events = parseCalendar(await res.text());
     return events.filter((e) => {
       const hay = `${e.name} ${e.club} ${e.state}`.toLowerCase();
-      return tokens.every((t) => hay.includes(t));
+      return tokens.every((t) => hay.includes(t.length > 4 && t.endsWith("s") && !t.endsWith("ss") ? t.slice(0, -1) : t));
     });
   } catch {
     return []; // Regatta Network down or slow: Clubspot results still return

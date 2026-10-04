@@ -199,9 +199,11 @@ type RegattaRow = Ptr & {
 
 async function searchClubspotRegattas(tokens: string[]): Promise<RegattaHit[]> {
   if (!tokens.length) return [];
+  // Clubspot keywords are word prefixes, so "nationals" misses "National Championship": search the singular.
+  const stems = tokens.map((w) => (w.length > 4 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w));
   const r = await parse<{ results?: RegattaRow[] }>("classes/regattas", {
     _method: "GET",
-    where: { keywords: { $all: tokens }, archived: { $ne: true } },
+    where: { keywords: { $all: stems }, archived: { $ne: true } },
     include: "clubObject",
     keys: "name,startDate,archived,clubObject.name,clubObject.city,clubObject.state,clubObject.country",
     order: "-startDate",
