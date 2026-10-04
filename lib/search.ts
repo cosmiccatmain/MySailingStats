@@ -300,6 +300,9 @@ async function searchClubs(q: string): Promise<ClubHit[]> {
   add(byName, "name");
   add(byKeyword, "name");
   add(byInitials, "initials");
+  // For a bare abbreviation, only a club that actually uses those letters in its name is a name match;
+  // Clubspot's keyword index also matches by initials, which are just possibilities.
+  if (abbr) for (const h of hits) h.match = new RegExp(`\\b${abbr}\\b`).test(normalize(h.name)) ? "name" : "initials";
   // Exact name (in any spelling) first, then other name matches, then initials.
   const rank = (h: ClubHit) => (clubKey(h.name) === want ? 0 : h.match === "name" ? 1 : 2);
   return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 30);
