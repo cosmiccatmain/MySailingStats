@@ -391,3 +391,60 @@ export function SeasonChart({ results, perf }: { results: RegattaResult[]; perf:
   );
 }
 
+
+// Multi Compare: you plus up to five others. Three validated series colors, then neutral lines told apart by dash pattern.
+const MULTI_STYLE: { stroke: string; dash?: string }[] = [
+  { stroke: "var(--series-1)" },
+  { stroke: "var(--series-2)" },
+  { stroke: "var(--series-3)" },
+  { stroke: "var(--text-muted)", dash: "6 4" },
+  { stroke: "var(--text-muted)", dash: "2 4" },
+  { stroke: "var(--text-muted)", dash: "10 4 2 4" },
+];
+export const MULTI_MAX_LINES = MULTI_STYLE.length;
+export const multiStyle = (i: number) => MULTI_STYLE[Math.min(i, MULTI_STYLE.length - 1)];
+
+export function MultiRatingChart({ series }: { series: { name: string; history: RatingPoint[] }[] }) {
+  const shown = series.slice(0, MULTI_MAX_LINES);
+  const rows = new Map<number, Record<string, number>>();
+  shown.forEach((s, i) => {
+    for (const h of s.history) {
+      const t = Date.parse(h.date);
+      rows.set(t, { ...rows.get(t), t, [`s${i}`]: Math.round(h.after) });
+    }
+  });
+  const data = [...rows.values()].sort((a, b) => a.t - b.t);
+  return (
+    <Card
+      title="Ratings, side by side"
+      sub={series.length > shown.length ? `First ${shown.length} sailors shown · same scale` : "Everyone on the same scale"}
+      wide
+    >
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="t" type="number" scale="time" domain={["dataMin", "dataMax"]} tickFormatter={shortDate} {...axis} />
+          <YAxis domain={["auto", "auto"]} width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            labelFormatter={(t) => new Date(Number(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          />
+          <Legend wrapperStyle={legendStyle} />
+          {shown.map((s, i) => (
+            <Line
+              key={s.name}
+              name={s.name}
+              dataKey={`s${i}`}
+              stroke={multiStyle(i).stroke}
+              strokeDasharray={multiStyle(i).dash}
+              strokeWidth={i === 0 ? 2.5 : 2}
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}

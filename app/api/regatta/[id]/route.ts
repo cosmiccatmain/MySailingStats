@@ -5,7 +5,7 @@ export const maxDuration = 60;
 
 const ID = /^[A-Za-z0-9]{6,20}$/;
 
-// GET /api/regatta/:id?class=<boatClassId>&reg=<registrationId>&date=ISO&method=<scoring>
+// GET /api/regatta/:id?class=<boatClassId>&reg=<registrationId, optional>&date=ISO&method=<scoring>
 // Results for one class (fleet) of a regatta: the sailor's row (found by
 // registration id) plus the whole fleet in compact form.
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -13,7 +13,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const q = new URL(req.url).searchParams;
   const classId = q.get("class") ?? "";
   const reg = q.get("reg") ?? "";
-  if (!ID.test(id) || !ID.test(classId) || !ID.test(reg)) {
+  if (!ID.test(id) || !ID.test(classId) || (reg && !ID.test(reg))) {
     return Response.json({ error: "bad params" }, { status: 400 });
   }
   const date = q.get("date") ?? new Date().toISOString();
@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       { id: classId, name: "", method: q.get("method") || null },
       date,
     );
-    const match = standings.find((s) => s.id === reg) ?? null;
+    const match = reg ? (standings.find((s) => s.id === reg) ?? null) : null;
     const top = standings[0];
     return Response.json(
       {

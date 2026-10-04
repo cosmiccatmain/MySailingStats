@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { clubKey } from "@/lib/analysis";
 import type { FieldRow } from "@/lib/field";
@@ -8,6 +9,8 @@ import { downloadCsv, fmtDate, ordinal } from "@/lib/format";
 import type { RatingPoint } from "@/lib/rating";
 import { percentile } from "@/lib/standings";
 import { allRaces, type RegattaResult } from "@/lib/stats";
+import { hasFeature } from "@/lib/plans";
+import { useWallet } from "@/lib/wallet";
 
 export function TierBadge({ fleet }: { fleet: string }) {
   const tier = fleetTier(fleet);
@@ -203,6 +206,7 @@ export function Leaderboard(props: { field: FieldRow[]; meId: string; myClub: st
 
 export function RaceTable({ results, sailor }: { results: RegattaResult[]; sailor: string }) {
   const races = useMemo(() => allRaces(results).reverse(), [results]);
+  const canExport = hasFeature(useWallet().plan, "csvExport");
   const exportCsv = () =>
     downloadCsv(`${sailor.replace(/\W+/g, "-")}-races.csv`, [
       ["Date", "Regatta", "Fleet", "Race", "Finish", "Letter", "Starters", "Discarded", "Beat %"],
@@ -215,7 +219,13 @@ export function RaceTable({ results, sailor }: { results: RegattaResult[]; sailo
     <div className="card table-wrap">
       <div className="table-tools">
         <span className="muted small">{races.length} races</span>
-        <button onClick={exportCsv}>Download CSV</button>
+        {canExport ? (
+          <button onClick={exportCsv}>Download CSV</button>
+        ) : (
+          <Link href="/pricing" className="muted small" title="CSV export comes with Boater and up">
+            🔒 Download CSV
+          </Link>
+        )}
       </div>
       <table>
         <thead>

@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
+import Link from "next/link";
 import { RatingChart, RegattaChart, TierChart } from "./Charts";
+import { Locked } from "./site/Gate";
 import { ordinal } from "@/lib/format";
 import { insights, tierSummaries } from "@/lib/insights";
 import type { RatingPoint } from "@/lib/rating";
@@ -14,6 +16,7 @@ export function Overview(props: {
   history: RatingPoint[]; // rating history for the visible regattas
   allHistory: RatingPoint[]; // full history, for the headline rating
   perf: Map<string, RatingPoint>;
+  plus: boolean; // DashboardPlus: ratings, insights, tier breakdown
 }) {
   const { results, history } = props;
   const s = useMemo(() => summary(results), [results]);
@@ -40,10 +43,16 @@ export function Overview(props: {
           <div>
             <div className="hero-name">{props.name}</div>
             <div className="hero-rating">
-              <span className="num">{current ? Math.round(current.after) : "–"}</span>
+              {props.plus ? (
+                <span className="num">{current ? Math.round(current.after) : "–"}</span>
+              ) : (
+                <Link href="/pricing" className="num locked" title="Ratings are part of DashboardPlus">
+                  🔒
+                </Link>
+              )}
               <span>
-                <span className="lbl">rating</span>
-                {delta != null && Math.abs(delta) >= 1 && (
+                <span className="lbl">{props.plus ? "rating" : "rating · DashboardPlus"}</span>
+                {props.plus && delta != null && Math.abs(delta) >= 1 && (
                   <>
                     <br />
                     <span className="delta">
@@ -54,7 +63,7 @@ export function Overview(props: {
               </span>
             </div>
           </div>
-          {spark.length > 1 && (
+          {props.plus && spark.length > 1 && (
             <div className="hero-spark" aria-label="Rating trend">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={spark} margin={{ top: 6, right: 4, left: 4, bottom: 6 }}>
@@ -107,7 +116,7 @@ export function Overview(props: {
         </div>
       </section>
 
-      {notes.length > 0 && (
+      {props.plus && notes.length > 0 && (
         <div className="highlights">
           {notes.map((n) => (
             <div key={n.text} className="card highlight">
@@ -122,8 +131,21 @@ export function Overview(props: {
 
       <div className="chart-grid">
         <RegattaChart results={results} perf={props.perf} />
-        <RatingChart history={history} />
-        <TierChart tiers={tiers} />
+        {props.plus ? (
+          <>
+            <RatingChart history={history} />
+            <TierChart tiers={tiers} />
+          </>
+        ) : (
+          <>
+            <Locked
+              feature="dashboardPlus"
+              title="Rating over time"
+              text="A fleet-strength rating that climbs race by race — beating a Championship fleet counts for more than winning Green."
+            />
+            <Locked feature="dashboardPlus" title="Championship vs Green" text="How you finish in each fleet tier, side by side, plus personal insights." />
+          </>
+        )}
       </div>
 
     </>

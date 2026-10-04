@@ -75,7 +75,7 @@ html, body { margin: 0; }
 body {
   background: var(--surface-0);
   color: var(--text-primary);
-  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3 { margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
@@ -153,8 +153,8 @@ select.compact { padding: 5px 10px; font-size: 13px; border-radius: 999px; }
   background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
   display: flex; flex-direction: column;
 }
-.menu button { border: 0; background: none; text-align: left; border-radius: 8px; padding: 8px 10px; }
-.menu button:hover { background: var(--surface-2); }
+.menu a, .menu button { display: block; color: var(--text-primary); text-decoration: none; border: 0; background: none; text-align: left; border-radius: 8px; padding: 8px 10px; }
+.menu a:hover, .menu button:hover { background: var(--surface-2); }
 .menu .menu-note { padding: 6px 10px; font-size: 12px; color: var(--text-muted); border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .loadbar { height: 3px; background: var(--grid); border-radius: 3px; overflow: hidden; }
 .loadbar span { display: block; height: 100%; background: linear-gradient(90deg, var(--series-1), var(--hero-c)); transition: width 0.3s; }

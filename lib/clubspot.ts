@@ -27,7 +27,7 @@ export type Registration = {
   sail: string;
 };
 
-async function parse<T>(path: string, body: Record<string, unknown>): Promise<T> {
+export async function parse<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${PARSE_URL}/${path}`, {
     method: "POST",
     headers: { "X-Parse-Application-Id": PARSE_APP_ID, "Content-Type": "application/json" },
@@ -55,8 +55,8 @@ type RegRow = {
   boatClassObject?: Ptr & { name?: string; scoring?: { method?: string } };
 };
 
-const titleCase = (s: string) => s.replace(/(^|[\s'-])(\p{L})/gu, (m) => m.toUpperCase());
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const titleCase = (s: string) => s.replace(/(^|[\s'-])(\p{L})/gu, (m) => m.toUpperCase());
+export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Every Clubspot regatta registration under this sailor's name, across all
@@ -150,4 +150,94 @@ export async function fetchResults(
   const standings = computeStandings(json.scoresByRegistration ?? [], boatClass.method ?? undefined);
   const raceCount = Math.max(json.races?.length ?? 0, ...standings.map((s) => s.races.length), 0);
   return { standings, raceCount };
+}
+
+export type RegattaInfo = {
+  id: string;
+  name: string;
+  date: string | null;
+  endDate: string | null;
+  club: { id: string; name: string; location: string } | null;
+  classes: BoatClass[];
+};
+
+/** A regatta and its racing classes (fleets), for the regatta page. */
+export async function regattaInfo(id: string): Promise<RegattaInfo | null> {
+  type Row = {
+    objectId: string;
+    name?: string;
+    startDate?: { iso: string };
+    endDate?: { iso: string };
+    clubObject?: { objectId: string; name?: string; city?: string; state?: string; country?: string };
+  };
+  type ClassRow = { objectId: string; name: string; scoring?: { method?: string } };
+  const ptr = { __type: "Pointer", className: "regattas", objectId: id };
+  const [reg, classes] = await Promise.all([
+    parse<{ results?: Row[] }>("classes/regattas", {
+      _method: "GET",
+      where: { objectId: id },
+      include: "clubObject",
+      keys: "name,startDate,endDate,clubObject.name,clubObject.city,clubObject.state,clubObject.country",
+      limit: 1,
+    }),
+    parse<{ results?: ClassRow[] }>("classes/boatClasses", {
+      _method: "GET",
+      where: { regattaObject: ptr, archived: false },
+      keys: "name,scoring",
+      order: "name",
+      limit: 100,
+    }),
+  ]);
+  const r = reg.results?.[0];
+  if (!r) return null;
+  const c = r.clubObject;
+  return {
+    id: r.objectId,
+    name: (r.name ?? "Regatta").trim(),
+    date: r.startDate?.iso ?? null,
+    endDate: r.endDate?.iso ?? null,
+    club: c ? { id: c.objectId, name: c.name ?? "", location: [c.city, c.state].filter(Boolean).join(", ") } : null,
+    classes: (classes.results ?? [])
+      .filter((x) => x.scoring?.method !== "not_racing")
+      .map((x) => ({ id: x.objectId, name: x.name.trim(), method: x.scoring?.method ?? null })),
+  };
+}
+
+export type ClubInfo = {
+  id: string;
+  name: string;
+  location: string;
+  website: string | null;
+  regattas: { id: string; name: string; date: string | null }[];
+};
+
+/** A club and its regattas on Clubspot, newest first. */
+export async function clubInfo(id: string): Promise<ClubInfo | null> {
+  type Row = { objectId: string; name?: string; city?: string; state?: string; country?: string; subdomain?: string; customDomain?: string };
+  type RegRow = { objectId: string; name?: string; startDate?: { iso: string } };
+  const [club, regs] = await Promise.all([
+    parse<{ results?: Row[] }>("classes/clubs", {
+      _method: "GET",
+      where: { objectId: id },
+      keys: "name,city,state,country,subdomain,customDomain",
+      limit: 1,
+    }),
+    parse<{ results?: RegRow[] }>("classes/regattas", {
+      _method: "GET",
+      where: { clubObject: { __type: "Pointer", className: "clubs", objectId: id }, archived: { $ne: true } },
+      keys: "name,startDate",
+      order: "-startDate",
+      limit: 100,
+    }),
+  ]);
+  const c = club.results?.[0];
+  if (!c) return null;
+  const domain = c.customDomain || (c.subdomain && !c.subdomain.includes("/") ? `${c.subdomain}.theclubspot.com` : null);
+  return {
+    id: c.objectId,
+    name: (c.name ?? "Club").trim(),
+    location: [c.city, c.state, c.country && !/^us/i.test(c.country) ? c.country : ""].filter(Boolean).join(", "),
+    website: domain ? `https://${domain}` : null,
+    regattas: (regs.results ?? []).map((r) => ({ id: r.objectId, name: (r.name ?? "Regatta").trim(), date: r.startDate?.iso ?? null })),
+  };
 }

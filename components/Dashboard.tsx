@@ -1,6 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Logo } from "./site/Art";
+import { Locked, OutOfCredits } from "./site/Gate";
+import { CreditsPill } from "./site/SiteHeader";
 import { DistributionChart, RaceChart, RaceNumberChart } from "./Charts";
 import { Overview } from "./Overview";
 import { Clubs } from "./Clubs";
@@ -24,6 +28,8 @@ import {
 } from "@/lib/loader";
 import { computeRatings, sailorKey, type RatingPoint } from "@/lib/rating";
 import { toLoaded, type RegattaResult } from "@/lib/stats";
+import { hasFeature } from "@/lib/plans";
+import { markPaid, paidFor, spend, useWallet } from "@/lib/wallet";
 
 type Profile = { name: string };
 type Filters = { green: boolean; other: boolean };
@@ -60,7 +66,10 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("overview");
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [broke, setBroke] = useState(false);
   const cancel = useRef(false);
+  const wallet = useWallet();
+  const plus = hasFeature(wallet.plan, "dashboardPlus");
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -88,6 +97,16 @@ export default function Dashboard() {
   const scan = useCallback(async (p: Profile, full: boolean) => {
     cancel.current = false;
     setError(null);
+    // Loading a sailor's history costs one search, once per billing period.
+    const key = `sailor:${sailorKey(p.name)}`;
+    if (!paidFor(key)) {
+      if (!spend()) {
+        setBroke(true);
+        return;
+      }
+      markPaid(key);
+    }
+    setBroke(false);
     setProgress({ done: 0, total: 0, failed: 0 });
     try {
       const { store: s, fields: f, failed } = await scanSailor(p.name, {
@@ -209,12 +228,11 @@ export default function Dashboard() {
   return (
     <main className="wrap">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden>
-            ⛵
-          </span>
+        <Link href="/" className="s-logo brand" aria-label="MySailingStats home">
+          <Logo />
           <span>MySailingStats</span>
-        </div>
+          <span className={`plan-tag${plus ? "" : " go"}`}>{plus ? "DashboardPlus" : "DashboardGo"}</span>
+        </Link>
         {profile && hasData && (
           <nav className="nav" role="tablist">
             {TABS.map(([k, label]) => (
@@ -224,8 +242,16 @@ export default function Dashboard() {
             ))}
           </nav>
         )}
-        {profile && (
-          <div className="actions">
+        <div className="actions">
+          <CreditsPill />
+          <Link className="icon-btn" href="/" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </Link>
+          {profile && (
+            <>
             <button
               className="icon-btn"
               title={progress ? "Stop" : "Check for new results"}
@@ -247,10 +273,12 @@ export default function Dashboard() {
                 <button onClick={() => scan(profile, false)}>Check for new results</button>
                 <button onClick={() => scan(profile, true)}>Rescan everything</button>
                 <button onClick={() => setProfile(null)}>Change sailor</button>
+                <Link href="/pricing">Plans &amp; credits</Link>
               </div>
             )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </header>
 
       {progress && (
@@ -266,10 +294,11 @@ export default function Dashboard() {
         </div>
       )}
       {error && <div className="card warn">{error}</div>}
+      {broke && <OutOfCredits what={`Loading ${profile?.name ?? "a sailor"}'s results`} />}
 
       {!profile ? (
         <Setup initial={readJson<Profile>(PROFILE_KEY, { name: "" }).name ?? ""} onSave={onSaveProfile} />
-      ) : !hasData && !progress ? (
+      ) : broke && !hasData ? null : !hasData && !progress ? (
         <div className="card empty">
           <h2>No regattas found yet</h2>
           <p className="muted">
@@ -305,7 +334,7 @@ export default function Dashboard() {
           )}
 
           {tab === "overview" && (
-            <Overview name={profile.name} results={results} history={visibleHistory} allHistory={history} perf={perf} />
+            <Overview name={profile.name} results={results} history={visibleHistory} allHistory={history} perf={perf} plus={plus} />
           )}
           {tab === "regattas" && (
             <>
@@ -314,8 +343,22 @@ export default function Dashboard() {
             </>
           )}
           {tab === "races" && <RacesTab results={results} sailor={profile.name} />}
-          {tab === "compare" && <Compare meName={profile.name} mine={loaded} />}
-          {tab === "clubs" && <Clubs regattas={loaded} myClub={myClub} meName={profile.name} />}
+          {tab === "compare" &&
+            (hasFeature(wallet.plan, "multiCompare") ? (
+              <Compare meName={profile.name} mine={loaded} plan={wallet.plan} />
+            ) : (
+              <Locked
+                wide
+                feature="multiCompare"
+                text="Line up sailors side by side: head-to-head records, same-start race wins and ratings on one scale."
+              />
+            ))}
+          {tab === "clubs" &&
+            (hasFeature(wallet.plan, "clubSearch") ? (
+              <Clubs regattas={loaded} myClub={myClub} meName={profile.name} />
+            ) : (
+              <Locked wide feature="clubSearch" text="Team scores for any club at every regatta, ranked by each club's best three finishers." />
+            ))}
         </>
       )}
       <footer className="muted small">
@@ -347,6 +390,9 @@ function Setup({ initial, onSave }: { initial: string; onSave: (p: Profile) => v
           Let&rsquo;s go
         </button>
       </form>
+      <p className="setup-alt">
+        Looking for someone else, a regatta or a club? <Link href="/">Search everything →</Link>
+      </p>
     </section>
   );
 }

@@ -1,7 +1,36 @@
 # My Sailing Stats
 
-Tracks a sailor's **Optimist results — USODA championships and local club regattas** — every regatta and
-every race, with charts.
+**The global sailing search.** Search regattas, sailors, boats, coaches and clubs from one box, then open
+any sailor's full dashboard: every regatta and race, fleet-strength ratings, Multi Compare and club team
+results.
+
+## Pages
+
+| Route | What |
+|---|---|
+| `/` | Landing page + search box |
+| `/search?q=&type=` | Results across sources (`lib/search.ts`, API `/api/search`) |
+| `/dashboard?name=First+Last` | A sailor's dashboard (DashboardGo / DashboardPlus) |
+| `/regatta/<id>`, `/club/<id>` | Clubspot regatta results and club pages |
+| `/pricing` | Plans — Personal (Boater, Parent, Platinum) ⇄ Enterprise (Coach, Team/TeamPlus, Club) |
+
+### Search sources
+
+- **Clubspot** (includes every USODA event): regattas by keyword, clubs, sailors and coaches from
+  registrations (last name), boats by sail number or boat name.
+- **Regatta Network**: the public event calendar (`lib/regattanetwork.ts`), linked out to the event page.
+
+### Credits and plans
+
+Every search costs 100 credits; loading a sailor's history costs 100 the first time each month. Everyone
+starts with 500 free credits. Plans (`lib/plans.ts`) set the monthly allowance and unlock features:
+Club Search and CSV export (Boater+), Multi Compare (Parent: 3 sailors, Platinum: 6, enterprise more),
+DashboardPlus — ratings, insights, Rival Radar (Platinum and enterprise).
+
+**Billing is not connected.** The wallet (`lib/wallet.ts`) lives in the browser's localStorage and
+choosing a plan activates it immediately — it's a demo of the product, not real enforcement. Hook up a
+payment provider (e.g. Stripe Checkout + a server-side wallet) before charging anyone. The Club plan's
+"Contact sales" composes an email to `NEXT_PUBLIC_SALES_EMAIL`.
 
 ## How it gets the data
 
