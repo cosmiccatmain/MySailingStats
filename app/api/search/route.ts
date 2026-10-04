@@ -10,7 +10,11 @@ export async function GET(req: Request) {
   if (q.length < 2) return Response.json({ error: "Type at least 2 characters" }, { status: 400 });
   try {
     const results = await search(q, type);
-    return Response.json(results, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=3600" } });
+    // Don't cache a result where a source timed out, or one slow lookup sticks for 10 minutes.
+    const partial = results.sources.some((src) => !src.ok);
+    return Response.json(results, {
+      headers: { "Cache-Control": partial ? "no-store" : "public, s-maxage=600, stale-while-revalidate=3600" },
+    });
   } catch (err) {
     return Response.json({ error: (err as Error).message }, { status: 502 });
   }
