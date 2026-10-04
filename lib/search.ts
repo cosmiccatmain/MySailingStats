@@ -154,10 +154,25 @@ async function searchBoats(q: string): Promise<BoatHit[]> {
   const t = q.trim();
   if (!t) return [];
   const sailLike = SAIL_LIKE.test(t);
-  const where = sailLike
-    ? { sailNumber: { $in: [...new Set([t.replace(/^[a-z]+\s?/i, ""), t.toUpperCase(), t])] } }
-    : { boatName: { $in: [...new Set([t, titleCase(t.toLowerCase()), t.toUpperCase(), t.toLowerCase()])] } };
-  const rows = await registrations(where, 60);
+  // sailNumber and boatName aren't indexed on Clubspot: $in / $exists force a full scan (10s+), while a
+  // plain equality with a small limit stops as soon as it has enough matches. So run one query per variant.
+  const variants = sailLike
+    ? [...new Set([t.replace(/^[a-z]+\s?/i, ""), t.toUpperCase().replace(/\s+/g, "")])]
+    : [...new Set([t, titleCase(t.toLowerCase())])];
+  const field = sailLike ? "sailNumber" : "boatName";
+  const batches = await Promise.all(
+    variants.map((v) =>
+      parse<{ results?: RegRow[] }>("classes/registrations", {
+        _method: "GET",
+        where: { [field]: v },
+        include: REG_INCLUDE,
+        keys: REG_KEYS,
+        limit: 25,
+      }).then((r) => r.results ?? [], () => [] as RegRow[]),
+    ),
+  );
+  const seen = new Set<string>();
+  const rows = batches.flat().filter((r) => !seen.has(r.objectId) && !!seen.add(r.objectId));
   return rows
     .filter((r) => r.regattaObject?.startDate)
     .map((r) => ({
