@@ -82,6 +82,6 @@ export async function upcomingRegattas(count = 6): Promise<UpcomingRegatta[]> {
     name: g.name!.trim(),
     date: g.startDate!.iso,
     club: g.clubObject?.name ?? "",
-    location: [g.clubObject?.city, g.clubObject?.state].filter(Boolean).join(", "),
+    location: [g.clubObject?.city, g.clubObject?.state].filter((p) => p && /\w/.test(p)).join(", "),
   }));
 }
