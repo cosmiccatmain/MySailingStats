@@ -34,7 +34,17 @@ export type RegattaHit = {
   external: boolean;
 };
 export type ClubHit = { id: string; name: string; location: string; url: string; match: "name" | "initials" };
-export type BoatHit = { boat: string; sail: string; sailor: string; regatta: string; regattaId: string; date: string };
+// One boat = one sailor racing one sail number; their regattas are rolled up rather than listed.
+export type BoatHit = {
+  boat: string;
+  sail: string;
+  sailor: string;
+  regatta: string; // most recent regatta
+  regattaId: string;
+  date: string; // most recent regatta date
+  firstDate: string;
+  regattas: number;
+};
 
 export type SearchResults = {
   q: string;
@@ -205,23 +215,37 @@ async function searchBoats(q: string): Promise<BoatHit[]> {
         where: { [field]: v },
         include: REG_INCLUDE,
         keys: REG_KEYS,
-        limit: 25,
+        limit: 60,
       }).then((r) => r.results ?? [], () => [] as RegRow[]),
     ),
   );
   const seen = new Set<string>();
-  const rows = batches.flat().filter((r) => !seen.has(r.objectId) && !!seen.add(r.objectId));
-  return rows
-    .filter((r) => r.regattaObject?.startDate)
-    .map((r) => ({
-      boat: r.boatName || "",
-      sail: r.sailNumber != null ? String(r.sailNumber) : "",
-      sailor: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
-      regatta: r.regattaObject?.name ?? "",
-      regattaId: r.regattaObject!.objectId,
-      date: r.regattaObject!.startDate!.iso,
-    }))
-    .sort((a, b) => b.date.localeCompare(a.date))
+  const rows = batches
+    .flat()
+    .filter((r) => !seen.has(r.objectId) && !!seen.add(r.objectId))
+    .filter((r) => r.regattaObject?.startDate && !NON_RACING.test(r.boatClassObject?.name ?? ""))
+    .sort((a, b) => b.regattaObject!.startDate!.iso.localeCompare(a.regattaObject!.startDate!.iso));
+  const boats = new Map<string, BoatHit & { ids: Set<string> }>();
+  for (const r of rows) {
+    const sailor = `${r.firstName ?? ""} ${r.lastName ?? ""}`.replace(/\s+/g, " ").trim();
+    const sail = r.sailNumber != null ? String(r.sailNumber).trim() : "";
+    const key = `${normalize(sailor)}|${sail.toUpperCase()}`;
+    const regattaId = r.regattaObject!.objectId;
+    const date = r.regattaObject!.startDate!.iso;
+    let b = boats.get(key);
+    if (!b) {
+      b = { boat: r.boatName || "", sail, sailor, regatta: r.regattaObject?.name ?? "", regattaId, date, firstDate: date, regattas: 0, ids: new Set() };
+      boats.set(key, b);
+    }
+    if (!b.boat && r.boatName) b.boat = r.boatName;
+    if (b.ids.has(regattaId)) continue; // same regatta entered in two fleets
+    b.ids.add(regattaId);
+    b.regattas++;
+    b.firstDate = date;
+  }
+  return [...boats.values()]
+    .map(({ ids: _ids, ...b }) => b)
+    .sort((a, b) => b.regattas - a.regattas || b.date.localeCompare(a.date))
     .slice(0, 30);
 }
 

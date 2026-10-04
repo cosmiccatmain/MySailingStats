@@ -148,7 +148,7 @@ export function SearchResults() {
               {show("clubs") && data.clubs.length > 0 && <ClubGroups clubs={data.clubs} q={q} />}
               {show("boats") && data.boats.length > 0 && (
                 <Group title="Boats" n={data.boats.length}>
-                  <Expandable items={data.boats} render={(b, i) => <BoatItem key={`${b.regattaId}-${i}`} b={b} />} />
+                  <Expandable items={data.boats} render={(b, i) => <BoatItem key={`${b.sailor}-${b.sail}-${i}`} b={b} />} />
                 </Group>
               )}
               {show("coaches") && data.coaches.length > 0 && (
@@ -524,15 +524,29 @@ function ClubItem({ c }: { c: ClubHit }) {
 }
 
 function BoatItem({ b }: { b: BoatHit }) {
+  const first = new Date(b.firstDate).getUTCFullYear();
+  const last = new Date(b.date).getUTCFullYear();
+  const span = first === last ? `${last}` : `${first}–${last}`;
+  const href = b.sailor ? `/dashboard?${new URLSearchParams({ name: b.sailor })}` : `/regatta/${b.regattaId}`;
   return (
-    <Link className="sr-item" href={`/regatta/${b.regattaId}`}>
+    <Link className="sr-item" href={href}>
+      <span className="sr-ico av" aria-hidden>
+        {b.sailor ? initials(b.sailor) : "#"}
+      </span>
       <span className="sr-main">
         <span className="sr-title-row">
-          <span>{b.boat ? `${b.boat}${b.sail ? ` · #${b.sail}` : ""}` : `Sail #${b.sail}`}</span>
+          <span>{b.sailor || (b.boat ? b.boat : `Sail #${b.sail}`)}</span>
         </span>
-        <span className="sr-sub">{[b.sailor, b.regatta, fmt(b.date)].filter(Boolean).join(" · ")}</span>
+        <span className="sr-sub">
+          {[
+            `Sail #${b.sail}${b.boat ? ` “${b.boat}”` : ""}`,
+            `${b.regattas} regatta${b.regattas === 1 ? "" : "s"}, ${span}`,
+            `latest ${b.regatta}`,
+          ].join(" · ")}
+        </span>
       </span>
       <span className="sr-side">
+        <span className="opt">{b.sailor ? "Results" : "Regatta"}</span>
         <ArrowRight aria-hidden />
       </span>
     </Link>
