@@ -84,6 +84,10 @@ async function registrations(where: Record<string, unknown>, limit = 400): Promi
   return r.results ?? [];
 }
 
+const SAIL_LIKE = /^[a-z]{0,3}\s?\d{2,6}$/i;
+
+// Registrations that aren't a sailor racing a boat.
+const NON_RACING = /coach|spectator|withdrawn|removed|parent|volunteer|support boat/i;
 const isCoachClass = (row: RegRow) => /coach/i.test(row.boatClassObject?.name ?? "");
 
 function groupPeople(rows: RegRow[], firstFilter: string): SailorHit[] {
@@ -149,7 +153,7 @@ async function searchPeople(q: string): Promise<SailorHit[]> {
 async function searchBoats(q: string): Promise<BoatHit[]> {
   const t = q.trim();
   if (!t) return [];
-  const sailLike = /^[a-z]{0,3}\s?\d{2,6}$/i.test(t);
+  const sailLike = SAIL_LIKE.test(t);
   const where = sailLike
     ? { sailNumber: { $in: [...new Set([t.replace(/^[a-z]+\s?/i, ""), t.toUpperCase(), t])] } }
     : { boatName: { $in: [...new Set([t, titleCase(t.toLowerCase()), t.toUpperCase(), t.toLowerCase()])] } };
@@ -188,7 +192,9 @@ async function searchClubspotRegattas(tokens: string[]): Promise<RegattaHit[]> {
     order: "-startDate",
     limit: 40,
   });
-  return (r.results ?? []).map((g) => {
+  // Clubs keep placeholder copies ("TEMPLATE | …", "… (Test)") they clone new events from.
+  const placeholder = /^\s*template\b|\(test\)/i;
+  return (r.results ?? []).filter((g) => !placeholder.test(g.name ?? "")).map((g) => {
     const c = g.clubObject;
     return {
       id: g.objectId,
@@ -278,13 +284,16 @@ export async function search(q: string, type: SearchType = "all"): Promise<Searc
       : [],
     want("clubs") ? guard("Clubspot clubs", searchClubs(q, tokens), [] as ClubHit[]) : [],
     // Boat-name / sail-number lookups aren't indexed on Clubspot: cap them.
-    want("boats") ? guard("Clubspot boats", searchBoats(q), [] as BoatHit[], type === "boats" ? 9000 : 6000) : [],
+    // Boat-name lookups are slow on Clubspot (unindexed), so "Everything" only checks sail numbers.
+    type === "boats" || (type === "all" && SAIL_LIKE.test(q.trim()))
+      ? guard("Clubspot boats", searchBoats(q), [] as BoatHit[], type === "boats" ? 9000 : 6000)
+      : [],
   ]);
 
   const regattas = [...csRegattas, ...rnRegattas].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   return {
     q,
-    sailors: want("sailors") ? people.filter((p) => !p.coach || p.classes.some((c) => !/coach/i.test(c))) : [],
+    sailors: want("sailors") ? people.filter((p) => !p.coach || p.classes.some((c) => !NON_RACING.test(c))) : [],
     coaches: want("coaches") ? people.filter((p) => p.coach) : [],
     regattas,
     clubs,
