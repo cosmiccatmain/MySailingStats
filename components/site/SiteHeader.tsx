@@ -1,6 +1,5 @@
 "use client";
 
-import { BarChart3, ChevronDown, CreditCard, Gauge, Search, User, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -8,15 +7,6 @@ import { Logo } from "./Art";
 import { ThemeToggle } from "./ThemeToggle";
 import { FREE_CREDITS, fmtCredits, hasFeature, PLANS } from "@/lib/plans";
 import { useWallet } from "@/lib/wallet";
-
-const initialsOf = (n: string) =>
-  n
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 
 /** The sailor saved on this browser (set from the dashboard). */
 function useProfileName(): string {
@@ -44,21 +34,13 @@ export function CreditsPill() {
   const w = useWallet();
   return (
     <Link href="/pricing" className="credits" title="Credits left this month. Each search uses 100.">
-      <Gauge aria-hidden />
-      {w.credits == null ? "Unlimited" : fmtCredits(w.credits)}
-      <span className="lbl">credits</span>
+      <b>{w.credits == null ? "Unlimited" : fmtCredits(w.credits)}</b> <span className="lbl">credits</span>
     </Link>
   );
 }
 
-const LINKS: [string, string][] = [
-  ["/", "Search"],
-  ["/dashboard", "Dashboard"],
-  ["/pricing", "Pricing"],
-  ["/pricing?for=enterprise", "Teams"],
-];
-
-export function SiteHeader() {
+/** Logo on the left, credits and the Menu pill on the right. `bar` pins it to the top of inner pages. */
+export function SiteHeader({ variant = "bar" }: { variant?: "bar" | "shell" }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const w = useWallet();
@@ -80,68 +62,71 @@ export function SiteHeader() {
   const plan = PLANS[w.plan];
   const plus = hasFeature(w.plan, "dashboardPlus");
   const allowance = w.plan === "free" ? FREE_CREDITS : plan.credits;
-  const left = w.credits;
-  const pctLeft = left == null || !Number.isFinite(allowance) ? 100 : Math.max(0, Math.min(100, (left / allowance) * 100));
+  const pctLeft = w.credits == null || !Number.isFinite(allowance) ? 100 : Math.max(0, Math.min(100, (w.credits / allowance) * 100));
 
   return (
-    <header className="nav-bar">
-      <div className="container nav-inner">
+    <header className={`nav-bar${variant === "bar" ? " bar" : ""}`}>
+      <div className={`nav-inner${variant === "bar" ? " container" : ""}`}>
         <Link href="/" className="logo" aria-label="MySailingStats home">
           <Logo />
           <span>MySailingStats</span>
         </Link>
-        <nav className="nav-links" aria-label="Main">
-          {LINKS.map(([href, label]) => (
-            <Link key={href} href={href} aria-current={path === href.split("?")[0] && (href !== "/pricing?for=enterprise") ? "page" : undefined}>
-              {label}
-            </Link>
-          ))}
-        </nav>
         <div className="nav-right" ref={ref}>
           <CreditsPill />
-          <button className="account-btn" aria-expanded={open} aria-haspopup="menu" onClick={() => setOpen(!open)} aria-label="Account menu">
-            <span className="av" aria-hidden>
-              {name ? initialsOf(name) : <User />}
+          <button className="menu-btn" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(!open)}>
+            <span className="bars" aria-hidden>
+              <i />
+              <i />
             </span>
-            <span className="nm">{name ? name.split(" ")[0] : "Account"}</span>
-            <ChevronDown aria-hidden />
+            Menu
           </button>
           {open && (
-            <div className="dropdown acct-menu" role="menu">
-              <div className="acct-plan">
-                <div className="top">
-                  <b>{plan.name} plan</b>
-                  <span className="badge plain" style={{ ["--tier" as string]: plus ? "var(--accent)" : "var(--text-secondary)" }}>
-                    {plus ? "DashboardPlus" : "DashboardGo"}
-                  </span>
+            <div className="menu-panel" role="menu">
+              <div className="mp-col">
+                <h4>Find</h4>
+                <Link className="mp-link" href="/" role="menuitem">
+                  <b>Search</b>
+                  <small>Regattas, sailors, sail numbers, clubs</small>
+                </Link>
+                <Link className="mp-link" href="/dashboard" role="menuitem">
+                  <b>{name || "My dashboard"}</b>
+                  <small>{name ? "Your results and stats" : "Set up your sailor"}</small>
+                </Link>
+              </div>
+              <div className="mp-col">
+                <h4>Plans</h4>
+                <Link className="mp-link" href="/pricing" role="menuitem">
+                  <b>Personal plans</b>
+                  <small>Boater, Parent, Platinum</small>
+                </Link>
+                <Link className="mp-link" href="/pricing?for=enterprise" role="menuitem">
+                  <b>Coaches and teams</b>
+                  <small>Coach, Team, TeamPlus, Club</small>
+                </Link>
+              </div>
+              <div className="mp-col mp-account">
+                <h4>Your account</h4>
+                <div className="plan">
+                  {plan.name}
+                  <small>{plus ? "DashboardPlus" : "DashboardGo"}</small>
                 </div>
                 <div className="meter" aria-hidden>
                   <span style={{ width: `${pctLeft}%` }} />
                 </div>
-                <div className="meta">
-                  <span>{left == null ? "Unlimited credits" : `${fmtCredits(left)} credits left`}</span>
+                <div className="cr">
+                  <span>
+                    <b>{w.credits == null ? "Unlimited" : fmtCredits(w.credits)}</b> credits left
+                  </span>
                   {w.renewsAt ? (
                     <span>Renews {new Date(w.renewsAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                   ) : (
-                    <Link className="upgrade" href="/pricing">
-                      Upgrade
-                    </Link>
+                    <Link href="/pricing">Upgrade</Link>
                   )}
                 </div>
-              </div>
-              <MenuLink href="/" icon={<Search />} title="Search" sub="Regattas, sailors, boats, clubs" />
-              <MenuLink
-                href="/dashboard"
-                icon={<BarChart3 />}
-                title={name ? `${name}` : "My dashboard"}
-                sub={name ? `Open ${plus ? "DashboardPlus" : "DashboardGo"}` : "Set up your sailor"}
-              />
-              <MenuLink href="/pricing" icon={<CreditCard />} title="Plans & pricing" sub="Boater, Parent, Platinum" />
-              <MenuLink href="/pricing?for=enterprise" icon={<Users />} title="Coaches & teams" sub="Coach, Team, TeamPlus, Club" />
-              <hr />
-              <div className="theme-row">
-                <span>Appearance</span>
-                <ThemeToggle />
+                <div className="theme">
+                  Appearance
+                  <ThemeToggle />
+                </div>
               </div>
             </div>
           )}
@@ -151,37 +136,59 @@ export function SiteHeader() {
   );
 }
 
-function MenuLink({ href, icon, title, sub }: { href: string; icon: React.ReactNode; title: string; sub: string }) {
-  return (
-    <Link href={href} role="menuitem" className="menu-item">
-      <span className="mi-ico" aria-hidden>
-        {icon}
-      </span>
-      <span className="mi-text">
-        <span>{title}</span>
-        <small>{sub}</small>
-      </span>
-    </Link>
-  );
-}
-
 export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="container">
-        <span>© {new Date().getFullYear()} MySailingStats. Results from Clubspot and Regatta Network.</span>
-        <nav aria-label="Footer">
-          <Link href="/">Search</Link>
-          <Link href="/dashboard">Dashboard</Link>
-          <Link href="/pricing">Pricing</Link>
-          <Link href="/pricing?for=enterprise">Coaches & teams</Link>
-        </nav>
+        <div className="brand-col">
+          <Link href="/" className="logo" aria-label="MySailingStats home">
+            <Logo />
+            <span>MySailingStats</span>
+          </Link>
+          <p>Results, rankings and race-by-race history from Clubspot and Regatta Network, checked against the official results.</p>
+        </div>
+        <div>
+          <h4>Find</h4>
+          <nav>
+            <Link href="/">Search</Link>
+            <Link href="/dashboard">My dashboard</Link>
+          </nav>
+        </div>
+        <div>
+          <h4>Plans</h4>
+          <nav>
+            <Link href="/pricing">Personal plans</Link>
+            <Link href="/pricing?for=enterprise">Coaches and teams</Link>
+          </nav>
+        </div>
+        <div>
+          <h4>Sources</h4>
+          <nav>
+            <a href="https://theclubspot.com" target="_blank" rel="noreferrer">
+              Clubspot
+            </a>
+            <a href="https://www.regattanetwork.com" target="_blank" rel="noreferrer">
+              Regatta Network
+            </a>
+          </nav>
+        </div>
+        <div className="credit">
+          © {new Date().getFullYear()} MySailingStats. Home page photo:{" "}
+          <a href="https://commons.wikimedia.org/wiki/File:005-_Optimist_(Loctudy_2012).jpg" target="_blank" rel="noreferrer">
+            jakez29120
+          </a>
+          ,{" "}
+          <a href="https://creativecommons.org/licenses/by-sa/2.0/" target="_blank" rel="noreferrer">
+            CC BY-SA 2.0
+          </a>
+          .
+        </div>
       </div>
     </footer>
   );
 }
 
-/** Standard page frame: header, content, footer. */
+/** Standard page frame: header bar, content, footer. */
 export function SitePage({ children }: { children: React.ReactNode }) {
   return (
     <div className="page">

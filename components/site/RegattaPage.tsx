@@ -200,7 +200,7 @@ export function RegattaPage({ id }: { id: string }) {
                   <div className="mini-list">
                     {teams.map((t) => (
                       <div key={t.key}>
-                        <span className="pb-ico" style={{ fontWeight: 700, fontSize: 13 }}>{t.teamRank}</span>
+                        <span className="date-tile"><b>{t.teamRank}</b></span>
                         <span className="main">
                           <span className="t" style={{ display: "block" }}>{t.club}</span>
                           <span className="d" style={{ display: "block" }}>

@@ -22,7 +22,7 @@ function Row({ r }: { r: Reg }) {
         )}
       </span>
       <span className="sr-main">
-        <span className="sr-title">
+        <span className="sr-title-row">
           <span>{r.name}</span>
         </span>
         <span className="sr-sub">{d?.toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" })}</span>

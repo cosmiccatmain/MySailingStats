@@ -86,6 +86,11 @@ export function SearchResults() {
 
   return (
     <div className="sr">
+      {q.length >= 2 && (
+        <h1 className="sr-title fx">
+          <span>Results for</span> {q}
+        </h1>
+      )}
       <SearchBox initialQuery={q} initialType={type} compact />
       {q.length < 2 ? (
         <div className="sr-empty">Search regattas, sailors, sail numbers, coaches or clubs.</div>
@@ -219,13 +224,13 @@ function BestMatch({ hit, q }: { hit: SailorHit; q: string }) {
   const loading = !stats && !failed;
   const best = stats?.best;
   return (
-    <section className="card bm fx">
+    <section className="bm fx">
       <div className="bm-top">
         <span className="avatar" aria-hidden>
           {initials(hit.name)}
         </span>
         <div className="who">
-          <div className="lbl">
+          <div className={`lbl${hit.match === "exact" ? "" : " close"}`}>
             {hit.match === "exact" ? (
               <>
                 <BadgeCheck aria-hidden /> Best match
@@ -258,8 +263,8 @@ function BestMatch({ hit, q }: { hit: SailorHit; q: string }) {
             )}
           </div>
         </div>
-        <Link className="btn btn-primary" href={href}>
-          Open dashboard <ArrowRight aria-hidden />
+        <Link className="btn btn-primary btn-lg" href={href}>
+          Open full dashboard <ArrowRight aria-hidden />
         </Link>
       </div>
       <div className="bm-kpis">
@@ -383,11 +388,11 @@ function CollapsedPeople({ people, label }: { people: SailorHit[]; label: string
 function PersonItem({ s, coach }: { s: SailorHit; coach?: boolean }) {
   const body = (
     <>
-      <span className="sr-ico" aria-hidden>
+      <span className="sr-ico av" aria-hidden>
         {initials(s.name)}
       </span>
       <span className="sr-main">
-        <span className="sr-title">
+        <span className="sr-title-row">
           <span>{s.name}</span>
         </span>
         <span className="sr-sub">
@@ -449,7 +454,7 @@ function RegattaItem({ r }: { r: RegattaHit }) {
         )}
       </span>
       <span className="sr-main">
-        <span className="sr-title">
+        <span className="sr-title-row">
           <span>{r.name}</span>
         </span>
         <span className="sr-sub">{[d?.getFullYear(), r.club, r.location].filter(Boolean).join(" · ")}</span>
@@ -499,21 +504,15 @@ function ClubGroups({ clubs, q }: { clubs: ClubHit[]; q: string }) {
 function ClubItem({ c }: { c: ClubHit }) {
   return (
     <Link className="sr-item" href={c.url}>
-      <span className="sr-ico" aria-hidden>
-        <School />
+      <span className="sr-ico av" aria-hidden>
+        {initials(c.name.replace(/\b(the|of|and)\b/gi, ""))}
       </span>
       <span className="sr-main">
-        <span className="sr-title">
+        <span className="sr-title-row">
           <span>{c.name}</span>
         </span>
         <span className="sr-sub">
-          {c.location ? (
-            <>
-              <MapPin aria-hidden style={{ width: 12, height: 12, verticalAlign: -1 }} /> {c.location}
-            </>
-          ) : (
-            "Club on Clubspot"
-          )}
+          {c.location || "Club on Clubspot"}
         </span>
       </span>
       <span className="sr-side">
@@ -527,11 +526,8 @@ function ClubItem({ c }: { c: ClubHit }) {
 function BoatItem({ b }: { b: BoatHit }) {
   return (
     <Link className="sr-item" href={`/regatta/${b.regattaId}`}>
-      <span className="sr-ico" aria-hidden>
-        <Sailboat />
-      </span>
       <span className="sr-main">
-        <span className="sr-title">
+        <span className="sr-title-row">
           <span>{b.boat ? `${b.boat}${b.sail ? ` · #${b.sail}` : ""}` : `Sail #${b.sail}`}</span>
         </span>
         <span className="sr-sub">{[b.sailor, b.regatta, fmt(b.date)].filter(Boolean).join(" · ")}</span>

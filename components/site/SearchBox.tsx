@@ -65,11 +65,11 @@ export function SearchBox(props: { initialQuery?: string; initialType?: SearchTy
           go();
         }}
       >
-        <Search aria-hidden />
+        <Search className="lead" aria-hidden />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search a sailor, regatta, sail number or club"
+          placeholder={props.compact ? "Search again" : "Search a sailor, regatta, sail number or club"}
           aria-label="Search regattas, sailors, boats, coaches and clubs"
           autoFocus={props.autoFocus}
           enterKeyHint="search"
@@ -88,8 +88,7 @@ export function SearchBox(props: { initialQuery?: string; initialType?: SearchTy
             <Mic aria-hidden />
           </button>
         )}
-        <button className="search-go" type="submit" disabled={q.trim().length < 2} aria-label="Search">
-          <span className="txt">Search</span>
+        <button className="search-go" type="submit" aria-label="Search">
           <ArrowRight aria-hidden />
         </button>
       </form>

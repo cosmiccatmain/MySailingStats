@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "node scripts/fetch-photos.mjs && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test lib/*.test.ts"
@@ -13,8 +13,8 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@fontsource-variable/fraunces": "^5.3.0",
-    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/public-sans": "^5.3.0",
+    "@fontsource-variable/source-serif-4": "^5.3.0",
     "lucide-react": "^1.51.0",
     "next": "^16.3.6",
     "react": "^19.3.0",

@@ -149,7 +149,7 @@ const ROWS: Row[] = [
 
 function CompareTable({ ids }: { ids: PlanId[] }) {
   return (
-    <div className="card pad-0 table-wrap p-table" style={{ marginTop: 28 }}>
+    <div className="table-wrap p-table">
       <table>
         <thead>
           <tr>
@@ -277,45 +277,48 @@ export function Pricing() {
         </span>
       </div>
 
-      <section className="l-section" style={{ paddingTop: 72 }}>
-        <div className="l-kicker">Compare</div>
-        <h2 className="l-h2">What each plan includes</h2>
+      <section className="band" style={{ paddingTop: 72 }}>
+        <div className="band-head">
+          <h2>What each plan includes</h2>
+        </div>
         <CompareTable ids={ids} />
       </section>
 
-      <section className="l-section" id="dashboards" style={{ paddingTop: 72, scrollMarginTop: 80 }}>
-        <div className="l-kicker">Dashboards</div>
-        <h2 className="l-h2">DashboardGo and DashboardPlus</h2>
-        <p className="l-lead">
+      <section className="band" id="dashboards" style={{ paddingTop: 72, scrollMarginTop: 80 }}>
+        <div className="band-head">
+          <h2>DashboardGo and DashboardPlus</h2>
+        </div>
+        <p className="band-lead">
           Both show every regatta and race. DashboardPlus adds a rating that weighs each result by the strength of the fleet, so a mid-fleet
           finish at Nationals can count for more than a Green fleet win.
         </p>
         <DashboardCompare />
       </section>
 
-      <section className="l-section" style={{ paddingTop: 72 }}>
-        <div className="l-kicker">FAQ</div>
-        <h2 className="l-h2">Common questions</h2>
+      <section className="band" style={{ paddingTop: 72 }}>
+        <div className="band-head">
+          <h2>Questions</h2>
+        </div>
         <div className="p-faq">
-          <div className="card">
+          <div>
             <h4>What uses credits?</h4>
             <p>
               Each search uses {CREDITS_PER_SEARCH} credits. Loading a sailor&rsquo;s dashboard uses {CREDITS_PER_SEARCH} the first time each
               month, unless you just found them by searching their name. Reopening a sailor that month is free.
             </p>
           </div>
-          <div className="card">
+          <div>
             <h4>Do unused credits roll over?</h4>
             <p>No. Your allowance resets on your renewal date each month.</p>
           </div>
-          <div className="card">
+          <div>
             <h4>Which dashboard do I get?</h4>
             <p>
               Free, Boater and Parent include DashboardGo. Platinum and every Enterprise plan include DashboardPlus.{" "}
               {hasFeature(wallet.plan, "dashboardPlus") ? "You have DashboardPlus." : "You have DashboardGo."}
             </p>
           </div>
-          <div className="card">
+          <div>
             <h4>Where do results come from?</h4>
             <p>Clubspot (including every USODA event) and Regatta Network today. Techscore, Sailwave and Manage2Sail are planned.</p>
           </div>

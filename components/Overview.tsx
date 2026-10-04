@@ -1,22 +1,6 @@
 "use client";
 
-import {
-  Activity,
-  ArrowDownRight,
-  ArrowUpRight,
-  CalendarDays,
-  Flag,
-  Medal,
-  Percent,
-  Scale,
-  Sparkles,
-  Target,
-  Timer,
-  TrendingUp,
-  Trophy,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
@@ -25,22 +9,13 @@ import { Locked } from "./site/Gate";
 import { CountUp } from "./ui/CountUp";
 import { fleetTier, TIER_LABEL, TIERS, type Tier } from "@/lib/fleets";
 import { fmtDate, ordinal } from "@/lib/format";
-import { insights, tierSummaries, type InsightIcon } from "@/lib/insights";
+import { insights, tierSummaries } from "@/lib/insights";
 import type { RatingPoint } from "@/lib/rating";
 import { percentile } from "@/lib/standings";
 import { allRaces, seasons, summary, type RegattaResult } from "@/lib/stats";
 
 export type Upcoming = { regattaId: string; regatta: string; date: string; club: string; fleet: string };
 
-const ICONS: Record<InsightIcon, LucideIcon> = {
-  balance: Scale,
-  trophy: Trophy,
-  trend: TrendingUp,
-  clock: Timer,
-  flag: Flag,
-  target: Target,
-  spread: Activity,
-};
 const pctOf = (r: RegattaResult) => percentile(r.me.place, r.entrants);
 const TIER_BONUS: Record<Tier, number> = { champ: 30, rwb: 15, open: 10, green: 0 };
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -80,8 +55,7 @@ export function Overview(props: {
 
       <div className="kpis fx-stagger">
         <div className="card kpi">
-          <div className="k">
-            <Flag aria-hidden /> Regattas
+          <div className="k">Regattas
           </div>
           <div className="v">
             <CountUp value={s.regattas} />
@@ -91,8 +65,7 @@ export function Overview(props: {
           </div>
         </div>
         <div className="card kpi">
-          <div className="k">
-            <Percent aria-hidden /> Avg. fleet beaten
+          <div className="k">Avg. fleet beaten
           </div>
           <div className="v">
             {s.avgPct != null ? (
@@ -112,8 +85,7 @@ export function Overview(props: {
           <div className="s">{seasonDelta != null && Math.abs(seasonDelta) >= 1 ? `${thisSeason.year} vs ${lastSeason.year}` : "across the regattas shown"}</div>
         </div>
         <div className="card kpi">
-          <div className="k">
-            <Trophy aria-hidden /> Best finish
+          <div className="k">Best finish
           </div>
           <div className="v">
             {best ? (
@@ -130,8 +102,7 @@ export function Overview(props: {
           </div>
         </div>
         <div className="card kpi">
-          <div className="k">
-            <Medal aria-hidden /> Podiums
+          <div className="k">Podiums
           </div>
           <div className="v">
             <CountUp value={podiums} />
@@ -183,17 +154,14 @@ export function Overview(props: {
       {plus ? (
         notes.length > 0 && (
           <div className="insights fx-stagger">
-            {notes.map((n) => {
-              const Icon = ICONS[n.icon];
-              return (
-                <div key={n.text} className="card insight">
-                  <span className="ico" aria-hidden>
-                    <Icon />
-                  </span>
-                  <p>{n.text}</p>
-                </div>
-              );
-            })}
+            {notes.map((n, i) => (
+              <div key={n.text} className="insight">
+                <span className="n" aria-hidden>
+                  {i + 1}
+                </span>
+                <p>{n.text}</p>
+              </div>
+            ))}
           </div>
         )
       ) : null}
@@ -231,14 +199,14 @@ function RatingHero({ all }: { all: RatingPoint[] }) {
       <div className="hero-grid">
         <div>
           <div className="k">
-            <Sparkles aria-hidden /> Fleet-strength rating
+            Fleet-strength rating
           </div>
           <div className="hero-num">
             <span className="num">{current ? <CountUp value={Math.round(current.after)} duration={900} /> : "–"}</span>
             {delta != null && Math.abs(delta) >= 1 && (
-              <span className="delta">
+              <span className={`delta${delta < 0 ? " down" : ""}`}>
                 {delta > 0 ? <ArrowUpRight aria-hidden /> : <ArrowDownRight aria-hidden />}
-                {Math.abs(delta)} in 12 months
+                {Math.abs(delta)} in the last 12 months
               </span>
             )}
           </div>
@@ -260,18 +228,18 @@ function RatingHero({ all }: { all: RatingPoint[] }) {
               <AreaChart data={spark} margin={{ top: 6, right: 4, left: 4, bottom: 6 }}>
                 <defs>
                   <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#fff" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="#fff" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--series-1)" stopOpacity={0.22} />
+                    <stop offset="100%" stopColor="var(--series-1)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <YAxis hide domain={["dataMin - 20", "dataMax + 20"]} />
                 <Tooltip
-                  cursor={{ stroke: "rgba(255,255,255,.5)" }}
-                  contentStyle={{ background: "rgba(8,20,40,.92)", border: 0, borderRadius: 8, color: "#fff", fontSize: 12 }}
+                  cursor={{ stroke: "var(--text-muted)", strokeDasharray: "3 3" }}
+                  contentStyle={{ background: "var(--surface-1)", border: "1px solid var(--border)", borderRadius: 8, color: "var(--text-primary)", fontSize: 13 }}
                   labelFormatter={(_, p) => (p?.[0] ? new Date(p[0].payload.t).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "")}
                   formatter={(v) => [v, "Rating"]}
                 />
-                <Area type="monotone" dataKey="r" stroke="#fff" strokeWidth={2} fill="url(#sparkFill)" animationDuration={900} />
+                <Area type="monotone" dataKey="r" stroke="var(--series-1)" strokeWidth={2.5} fill="url(#sparkFill)" animationDuration={900} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -285,14 +253,11 @@ function PlusStrip() {
   return (
     <section className="card hero-locked fx">
       <div className="row" style={{ gap: 14, alignItems: "flex-start" }}>
-        <span className="pb-ico" style={{ background: "var(--brand-soft)", color: "var(--accent)", borderColor: "transparent" }} aria-hidden>
-          <Sparkles />
-        </span>
         <div>
-          <h3>You&rsquo;re on DashboardGo</h3>
-          <p className="small muted" style={{ marginTop: 2, maxWidth: 620 }}>
-            DashboardPlus adds a fleet-strength rating, rating history, insights and Rival Radar, so you can see how good each result really
-            was.
+          <h3>This is DashboardGo.</h3>
+          <p className="small muted" style={{ marginTop: 2, maxWidth: 640 }}>
+            DashboardPlus adds a rating that accounts for how strong each fleet was, the rating&rsquo;s history, notes on your racing and Rival
+            Radar.
           </p>
         </div>
       </div>
@@ -365,7 +330,6 @@ function UpcomingCard({ items }: { items: Upcoming[] | null }) {
           <h3>Upcoming</h3>
           <p>Regattas registered on Clubspot</p>
         </div>
-        <CalendarDays aria-hidden style={{ width: 18, height: 18, color: "var(--text-muted)" }} />
       </div>
       {items == null ? (
         <div className="stack" style={{ gap: 10 }}>
@@ -401,18 +365,18 @@ function UpcomingCard({ items }: { items: Upcoming[] | null }) {
 }
 
 function PersonalBests({ results }: { results: RegattaResult[] }) {
-  const rows: { icon: LucideIcon; label: string; value: string; detail: string }[] = [];
+  const rows: { label: string; value: string; detail: string }[] = [];
   for (const tier of TIERS) {
     const rs = results.filter((r) => fleetTier(r.fleet) === tier);
     if (!rs.length) continue;
     const b = [...rs].sort((a, c) => (pctOf(c) ?? -1) - (pctOf(a) ?? -1) || a.me.place - c.me.place)[0];
-    rows.push({ icon: Trophy, label: `Best ${TIER_LABEL[tier]} finish`, value: `${ordinal(b.me.place)} / ${b.entrants}`, detail: b.name });
+    rows.push({ label: `Best ${TIER_LABEL[tier]} finish`, value: `${ordinal(b.me.place)} / ${b.entrants}`, detail: b.name });
   }
   const races = allRaces(results).filter((r) => r.points != null && !r.letter);
   const bestRace = [...races].sort((a, b) => (a.points as number) - (b.points as number) || (b.starters ?? 0) - (a.starters ?? 0))[0];
-  if (bestRace) rows.push({ icon: Target, label: "Best race", value: ordinal(bestRace.points as number), detail: `${bestRace.regatta}, R${bestRace.race}` });
+  if (bestRace) rows.push({ label: "Best race", value: ordinal(bestRace.points as number), detail: `${bestRace.regatta}, R${bestRace.race}` });
   const most = [...results].sort((a, b) => b.entrants - b.me.place - (a.entrants - a.me.place))[0];
-  if (most) rows.push({ icon: Users, label: "Most boats beaten", value: `${most.entrants - most.me.place}`, detail: most.name });
+  if (most) rows.push({ label: "Most boats beaten", value: `${most.entrants - most.me.place}`, detail: most.name });
   return (
     <section className="card">
       <div className="card-head">
@@ -424,9 +388,6 @@ function PersonalBests({ results }: { results: RegattaResult[] }) {
       <div className="mini-list">
         {rows.map((r) => (
           <div key={r.label}>
-            <span className="pb-ico" aria-hidden>
-              <r.icon />
-            </span>
             <span className="main">
               <span className="t" style={{ display: "block", fontWeight: 550, fontSize: 13, color: "var(--text-secondary)" }}>{r.label}</span>
               <span className="d" style={{ display: "block" }} title={r.detail}>{r.detail}</span>
