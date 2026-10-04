@@ -1,39 +1,34 @@
 "use client";
 
+import { ArrowRight, Mic, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CREDITS_PER_SEARCH, fmtCredits } from "@/lib/plans";
 import { SEARCH_TYPES, type SearchType } from "@/lib/search-types";
-import { useWallet } from "@/lib/wallet";
 
-const EXAMPLES = [
-  "Try ‘Optimist Nationals’",
-  "Try ‘Annapolis Yacht Club’",
-  "Try a sailor, like ‘Wills Gandy’",
-  "Try a sail number, like ‘22179’",
-  "Try ‘Laser Midwinters’",
-  "Try ‘Opti Team Trials’",
-];
+type Recognition = {
+  start: () => void;
+  stop: () => void;
+  onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null;
+  onend: (() => void) | null;
+  lang: string;
+  interimResults: boolean;
+};
+type SRWindow = { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
 
-type Recognition = { start: () => void; stop: () => void; onresult: ((e: { results: { 0: { transcript: string } }[] }) => void) | null; onend: (() => void) | null; lang: string; interimResults: boolean };
-
-export function SearchBox(props: { initialQuery?: string; initialType?: SearchType; showMeta?: boolean; autoFocus?: boolean }) {
+export function SearchBox(props: { initialQuery?: string; initialType?: SearchType; autoFocus?: boolean; compact?: boolean }) {
   const router = useRouter();
-  const w = useWallet();
   const [q, setQ] = useState(props.initialQuery ?? "");
   const [type, setType] = useState<SearchType>(props.initialType ?? "all");
-  const [ex, setEx] = useState(0);
   const [listening, setListening] = useState(false);
   const [canVoice, setCanVoice] = useState(false);
   const rec = useRef<Recognition | null>(null);
 
   useEffect(() => {
-    const t = setInterval(() => setEx((i) => (i + 1) % EXAMPLES.length), 3200);
-    const SR = (window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition });
-    setCanVoice(!!(SR.SpeechRecognition || SR.webkitSpeechRecognition));
-    return () => clearInterval(t);
+    const w = window as unknown as SRWindow;
+    setCanVoice(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
   }, []);
   useEffect(() => setQ(props.initialQuery ?? ""), [props.initialQuery]);
+  useEffect(() => setType(props.initialType ?? "all"), [props.initialType]);
 
   const go = (query = q) => {
     const v = query.trim();
@@ -43,8 +38,8 @@ export function SearchBox(props: { initialQuery?: string; initialType?: SearchTy
 
   const voice = () => {
     if (listening) return rec.current?.stop();
-    const W = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
-    const SR = W.SpeechRecognition || W.webkitSpeechRecognition;
+    const w = window as unknown as SRWindow;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) return;
     const r = new SR();
     r.lang = "en-US";
@@ -61,22 +56,25 @@ export function SearchBox(props: { initialQuery?: string; initialType?: SearchTy
   };
 
   return (
-    <div className="s-search">
+    <div className={`search${props.compact ? " compact" : ""}`}>
       <form
-        className="s-pill"
+        className="search-pill"
         role="search"
         onSubmit={(e) => {
           e.preventDefault();
           go();
         }}
       >
+        <Search aria-hidden />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={EXAMPLES[ex]}
+          placeholder="Search a sailor, regatta, sail number or club"
           aria-label="Search regattas, sailors, boats, coaches and clubs"
           autoFocus={props.autoFocus}
           enterKeyHint="search"
+          autoComplete="off"
+          spellCheck={false}
         />
         <select value={type} onChange={(e) => setType(e.target.value as SearchType)} aria-label="Search in">
           {SEARCH_TYPES.map(([k, label]) => (
@@ -86,26 +84,15 @@ export function SearchBox(props: { initialQuery?: string; initialType?: SearchTy
           ))}
         </select>
         {canVoice && (
-          <button type="button" className={`s-icon-btn${listening ? " listening" : ""}`} onClick={voice} aria-label={listening ? "Stop listening" : "Search by voice"}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-              <rect x="9" y="3" width="6" height="11" rx="3" />
-              <path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8" />
-            </svg>
+          <button type="button" className={`icon-btn${listening ? " listening" : ""}`} onClick={voice} aria-label={listening ? "Stop listening" : "Search by voice"}>
+            <Mic aria-hidden />
           </button>
         )}
-        <button className="s-go" type="submit" aria-label="Search" disabled={q.trim().length < 2}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M5 12h14M13 6l6 6-6 6" />
-          </svg>
+        <button className="search-go" type="submit" disabled={q.trim().length < 2} aria-label="Search">
+          <span className="txt">Search</span>
+          <ArrowRight aria-hidden />
         </button>
       </form>
-      {props.showMeta !== false && (
-        <div className="s-search-meta">
-          <span>
-            {CREDITS_PER_SEARCH} credits per search · {w.credits == null ? "unlimited" : `${fmtCredits(w.credits)} left`}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

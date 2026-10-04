@@ -3,7 +3,7 @@
 import { fleetTier, TIER_LABEL, TIERS, type Tier } from "./fleets";
 import type { RatingPoint } from "./rating";
 import { percentile } from "./standings";
-import { allRaces, raceBeatPct, type RegattaResult } from "./stats";
+import { allRaces, consistency, raceBeatPct, type RegattaResult } from "./stats";
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const pctOf = (r: RegattaResult) => percentile(r.me.place, r.entrants);
@@ -46,7 +46,8 @@ export function byRaceNumber(results: RegattaResult[]) {
     .map(([race, ps]) => ({ race: `R${race}`, avg: avg(ps)!, n: ps.length }));
 }
 
-export type Insight = { icon: string; text: string };
+export type InsightIcon = "balance" | "trophy" | "trend" | "clock" | "flag" | "target" | "spread";
+export type Insight = { icon: InsightIcon; text: string };
 
 export function insights(results: RegattaResult[], history: RatingPoint[]): Insight[] {
   const out: Insight[] = [];
@@ -56,16 +57,16 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): Insi
   const green = tiers.find((t) => t.tier === "green");
   if (champ?.avgPerformance != null && green?.avgPerformance != null) {
     const d = Math.round(champ.avgPerformance - green.avgPerformance);
-    out.push({ icon: "⚖️", text:
+    out.push({ icon: "balance", text:
       d > 0
         ? `Championship results rate ${d} points above your Green fleet results — tougher fleets count for more.`
-        : `Green fleet results still rate ${-d} points above Championship — those fleets are much tougher. Keep going.`
+        : `Green fleet results still rate ${-d} points above Championship — Championship fleets are much deeper.`
     });
   }
   const byPerf = history.slice().sort((a, b) => b.performance - a.performance);
   const best = byPerf[0] && results.find((r) => r.id === byPerf[0].regattaId);
   if (best) {
-    out.push({ icon: "🏆", text:
+    out.push({ icon: "trophy", text:
       `Best performance: ${best.me.place} of ${best.entrants} at ${best.name} (${TIER_LABEL[fleetTier(best.fleet)]}), rated ${Math.round(byPerf[0].performance)}.`
     });
   }
@@ -75,7 +76,7 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): Insi
     const yearAgo = chrono.filter((h) => Date.parse(h.date) <= Date.parse(last.date) - 365 * 864e5).pop() ?? chrono[0];
     const d = Math.round(last.after - yearAgo.before);
     if (Math.abs(d) >= 10) {
-      out.push({ icon: "📈", text: `Your rating has ${d > 0 ? "climbed" : "dropped"} ${Math.abs(d)} points since ${new Date(yearAgo.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}.` });
+      out.push({ icon: "trend", text: `Your rating has ${d > 0 ? "climbed" : "dropped"} ${Math.abs(d)} points since ${new Date(yearAgo.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}.` });
     }
   }
   const races = allRaces(results);
@@ -84,7 +85,7 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): Insi
     const top = byRace.slice().sort((a, b) => b.avg - a.avg)[0];
     const first = byRace[0];
     const later = avg(byRace.slice(-3).map((x) => x.avg))!;
-    out.push({ icon: "⏱️", text:
+    out.push({ icon: "clock", text:
       later > first.avg + 5
         ? `You finish strong: ${Math.round(first.avg)}% of the fleet beaten in race 1, ${Math.round(later)}% in the last races.`
         : first.avg > later + 5
@@ -95,14 +96,26 @@ export function insights(results: RegattaResult[], history: RatingPoint[]): Insi
   const penalties = races.filter((r) => r.letter && /^(OCS|UFD|BFD|ZFP|SCP)$/i.test(r.letter)).length;
   const scoredRaces = races.filter((r) => r.points != null).length;
   if (penalties) {
-    out.push({ icon: "🚩", text: `${penalties} start penalt${penalties === 1 ? "y" : "ies"} (OCS/UFD/BFD) in ${scoredRaces} races — ${((penalties / scoredRaces) * 100).toFixed(1)}% of starts.` });
+    out.push({ icon: "flag", text: `${penalties} start penalt${penalties === 1 ? "y" : "ies"} (OCS/UFD/BFD) in ${scoredRaces} races — ${((penalties / scoredRaces) * 100).toFixed(1)}% of starts.` });
   } else if (scoredRaces >= 10) {
-    out.push({ icon: "🚩", text: `No start penalties (OCS/UFD/BFD) in ${scoredRaces} races.` });
+    out.push({ icon: "flag", text: `No start penalties (OCS/UFD/BFD) in ${scoredRaces} races.` });
+  }
+  const spread = consistency(results);
+  if (spread != null) {
+    out.push({
+      icon: "spread",
+      text:
+        spread < 20
+          ? `Very consistent: race finishes vary by about ${Math.round(spread)} points of fleet share, race to race.`
+          : spread < 28
+            ? `Moderately consistent: race finishes vary by about ${Math.round(spread)} points of fleet share. Cutting the bad races is the quickest gain.`
+            : `Finishes swing a lot (about ${Math.round(spread)} points of fleet share). Avoiding the occasional deep race would lift overall results most.`,
+    });
   }
   const pcts = races.map((r) => r.pct).filter((x): x is number => x != null);
   if (pcts.length >= 10) {
     const topQ = pcts.filter((p) => p >= 75).length;
-    out.push({ icon: "🎯", text: `${Math.round((topQ / pcts.length) * 100)}% of your races finished in the top quarter of the start.` });
+    out.push({ icon: "target", text: `${Math.round((topQ / pcts.length) * 100)}% of your races finished in the top quarter of the start.` });
   }
   return out;
 }

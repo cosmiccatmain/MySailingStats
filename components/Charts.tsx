@@ -23,17 +23,18 @@ import { byRaceNumber, type TierSummary } from "@/lib/insights";
 import type { RatingPoint } from "@/lib/rating";
 import { ordinal } from "@/lib/format";
 import { percentile } from "@/lib/standings";
-import { allRaces, byYear, finishDistribution, rollingAverage, type RegattaResult } from "@/lib/stats";
+import { allRaces, byFleetSize, byYear, finishDistribution, rollingAverage, type RegattaResult } from "@/lib/stats";
 
 const axis = { stroke: "var(--text-muted)", fontSize: 12, tickLine: false } as const;
 const grid = <CartesianGrid stroke="var(--grid)" vertical={false} />;
 const tooltipStyle = {
   contentStyle: {
-    background: "var(--surface-2)",
+    background: "var(--surface-1)",
     border: "1px solid var(--border)",
-    borderRadius: 8,
+    borderRadius: 10,
     color: "var(--text-primary)",
     fontSize: 13,
+    boxShadow: "var(--shadow-lg)",
   },
   labelStyle: { color: "var(--text-secondary)" },
   itemStyle: { color: "var(--text-primary)" },
@@ -113,8 +114,9 @@ function PointTooltip({ active, payload }: { active?: boolean; payload?: { paylo
 }
 
 /** Every regatta, coloured and shaped by fleet level, on a real time axis. */
-export function RegattaChart({ results, perf }: { results: RegattaResult[]; perf: Map<string, RatingPoint> }) {
-  const [metric, setMetric] = useState<Metric>("perf");
+export function RegattaChart({ results, perf, ratings = true }: { results: RegattaResult[]; perf: Map<string, RatingPoint>; ratings?: boolean }) {
+  const [picked, setMetric] = useState<Metric>(ratings ? "perf" : "pct");
+  const metric: Metric = !ratings && picked === "perf" ? "pct" : picked;
   const points: Point[] = results.map((r) => {
     const p = perf.get(r.id);
     const y =
@@ -138,12 +140,17 @@ export function RegattaChart({ results, perf }: { results: RegattaResult[]; perf
   const present = TIERS.filter((t) => points.some((p) => p.tier === t && Number.isFinite(p.y)));
   const sub =
     metric === "perf"
-      ? "Adjusted for fleet strength — Championship results count for more"
+      ? "Performance rating, adjusted for fleet strength"
       : metric === "pct"
-        ? "Share of the fleet you beat (100% = won)"
-        : "Boats that finished behind you";
+        ? "Share of the fleet beaten (100% = won)"
+        : "Boats that finished behind";
   return (
-    <Card title="Regatta results by fleet level" sub={sub} wide action={<Seg value={metric} options={METRICS} onChange={setMetric} />}>
+    <Card
+      title="Results by fleet level"
+      sub={sub}
+      wide
+      action={<Seg value={metric} options={ratings ? METRICS : METRICS.filter(([m]) => m !== "perf")} onChange={setMetric} />}
+    >
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           {grid}
@@ -199,7 +206,7 @@ export function RatingChart(props: { history: RatingPoint[]; other?: { name: str
       sub={
         props.other
           ? "Both sailors on the same scale"
-          : "Beating strong sailors counts more than beating beginners"
+          : "Beating strong fleets counts for more than beating beginners"
       }
       wide={!!props.other}
     >
@@ -252,8 +259,8 @@ export function TierChart({ tiers }: { tiers: TierSummary[] }) {
   }));
   return (
     <Card
-      title="Championship vs Green"
-      sub={metric === "perf" ? "Average rating by fleet level" : "Average share of the fleet beaten"}
+      title="By fleet level"
+      sub={metric === "perf" ? "Average performance rating per fleet level" : "Average share of the fleet beaten per fleet level"}
       action={
         <Seg
           value={metric}
@@ -304,7 +311,7 @@ export function RaceChart({ results }: { results: RegattaResult[] }) {
     starters: r.starters,
   }));
   return (
-    <Card title="Every race" sub="Share of the start beaten, with a 10-race average">
+    <Card title="Every race" sub="Share of the start beaten in each race, with a 10-race average">
       <ResponsiveContainer width="100%" height={260}>
         <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           {grid}
@@ -332,13 +339,13 @@ export function RaceNumberChart({ results }: { results: RegattaResult[] }) {
   const data = byRaceNumber(results);
   const mean = data.length ? data.reduce((a, b) => a + b.avg * b.n, 0) / data.reduce((a, b) => a + b.n, 0) : 0;
   return (
-    <Card title="Early vs late races" sub="Start fast or finish strong?">
+    <Card title="By race number" sub="Average share of the start beaten in race 1, race 2, and so on">
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           {grid}
           <XAxis dataKey="race" {...axis} />
           <YAxis domain={[0, 100]} unit="%" width={48} {...axis} />
-          <ReferenceLine y={mean} stroke="var(--text-muted)" strokeDasharray="4 4" label={{ value: "your average", position: "insideTopRight", fill: "var(--text-muted)", fontSize: 11 }} />
+          <ReferenceLine y={mean} stroke="var(--text-muted)" strokeDasharray="4 4" label={{ value: "average", position: "insideTopRight", fill: "var(--text-muted)", fontSize: 11 }} />
           <Tooltip {...tooltipStyle} cursor={{ fill: "var(--grid)" }} formatter={(v, _n, p) => [`${Math.round(Number(v))}% over ${(p.payload as { n: number }).n} races`, "Average"]} />
           <Bar dataKey="avg" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={40} />
         </BarChart>
@@ -350,7 +357,7 @@ export function RaceNumberChart({ results }: { results: RegattaResult[] }) {
 export function DistributionChart({ results }: { results: RegattaResult[] }) {
   const dist = finishDistribution(allRaces(results));
   return (
-    <Card title="Finish distribution" sub="Where your finishes land in the start">
+    <Card title="Finish distribution" sub="Where race finishes land within the start">
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={dist} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
           {grid}
@@ -444,6 +451,28 @@ export function MultiRatingChart({ series }: { series: { name: string; history: 
             />
           ))}
         </LineChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
+
+/** Average share of the fleet beaten, by fleet size. */
+export function FleetSizeChart({ results }: { results: RegattaResult[] }) {
+  const data = byFleetSize(results);
+  return (
+    <Card title="By fleet size" sub="Average share of the fleet beaten, grouped by number of boats">
+      <ResponsiveContainer width="100%" height={240}>
+        <BarChart data={data} margin={{ top: 16, right: 12, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="label" {...axis} interval={0} />
+          <YAxis domain={[0, 100]} unit="%" width={48} {...axis} />
+          <Tooltip
+            {...tooltipStyle}
+            cursor={{ fill: "var(--grid)" }}
+            formatter={(v, _n, p) => [`${v}% beaten · ${(p.payload as { regattas: number }).regattas} regatta(s)`, "Average"]}
+          />
+          <Bar dataKey="avg" fill="var(--series-1)" radius={[4, 4, 0, 0]} maxBarSize={56} label={{ position: "top", fill: "var(--text-secondary)", fontSize: 12, formatter: (v: unknown) => (v == null ? "" : `${v}%`) }} />
+        </BarChart>
       </ResponsiveContainer>
     </Card>
   );

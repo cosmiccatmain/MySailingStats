@@ -1,7 +1,9 @@
 "use client";
 
+import { CalendarDays, ChevronRight, ExternalLink, MapPin, School } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { clubTeams } from "@/lib/analysis";
 import type { RegattaInfo } from "@/lib/clubspot";
 import type { FieldRow } from "@/lib/field";
 import { fleetTier, TIER_LABEL } from "@/lib/fleets";
@@ -14,12 +16,13 @@ export function RegattaPage({ id }: { id: string }) {
   const [cls, setCls] = useState<string | null>(null);
   const [field, setField] = useState<FieldRow[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [all, setAll] = useState(false);
 
   useEffect(() => {
     fetch(`/api/regatta-info/${id}`)
       .then(async (r) => {
         const b = await r.json();
-        if (!r.ok) throw new Error(b.error);
+        if (!r.ok) throw new Error(b.error === "not found" ? "This regatta isn't on Clubspot." : b.error);
         return b as RegattaInfo;
       })
       .then((i) => {
@@ -36,6 +39,7 @@ export function RegattaPage({ id }: { id: string }) {
     const c = info.classes.find((x) => x.id === cls)!;
     setLoading(true);
     setField(null);
+    setAll(false);
     fetch(`/api/regatta/${id}?${new URLSearchParams({ class: cls, date: info.date ?? new Date().toISOString(), method: c.method ?? "" })}`)
       .then((r) => r.json())
       .then((b) => setField(b.field ?? []))
@@ -43,94 +47,172 @@ export function RegattaPage({ id }: { id: string }) {
       .finally(() => setLoading(false));
   }, [id, info, cls]);
 
-  if (err) return <div className="r-empty">{err}</div>;
-  if (!info) return <div className="r-list" style={{ marginTop: 24 }}>{[0, 1, 2].map((i) => <div key={i} className="r-skel" />)}</div>;
+  const teams = useMemo(() => (field ? clubTeams(field).filter((t) => t.teamRank != null).slice(0, 5) : []), [field]);
+
+  if (err) return <div className="detail"><div className="sr-empty">{err}</div></div>;
+  if (!info)
+    return (
+      <div className="detail">
+        <div className="skel" style={{ height: 34, width: "60%" }} />
+        <div className="skel" style={{ height: 18, width: "40%" }} />
+        <div className="skel" style={{ height: 320 }} />
+      </div>
+    );
   const races = Math.max(0, ...(field ?? []).map((r) => r.r.length));
   const selected = info.classes.find((c) => c.id === cls);
+  const rows = field ? (all ? field : field.slice(0, 50)) : [];
   return (
-    <div className="r-top" style={{ maxWidth: 1060 }}>
-      <div className="s-eyebrow" style={{ marginTop: 26 }}>Regatta</div>
-      <h1 className="s-h2">{info.name}</h1>
-      <p className="s-lead" style={{ marginTop: 8 }}>
-        {fmt(info.date)}
-        {info.club && (
-          <>
-            {" · "}
-            <Link href={`/club/${info.club.id}`}>{info.club.name}</Link>
-            {info.club.location ? ` · ${info.club.location}` : ""}
-          </>
-        )}
-      </p>
-      <div className="btns" style={{ marginTop: 14 }}>
-        <a className="s-btn ghost" href={`https://theclubspot.com/regatta/${id}/results`} target="_blank" rel="noreferrer">
-          Official results ↗
+    <div className="detail fx-in">
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link href="/">Search</Link>
+        <ChevronRight aria-hidden />
+        {info.club ? <Link href={`/club/${info.club.id}`}>{info.club.name}</Link> : <span>Regatta</span>}
+      </nav>
+      <div className="detail-head row" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <h1>{info.name}</h1>
+          <div className="meta">
+            <span>
+              <CalendarDays aria-hidden />
+              {fmt(info.date)}
+            </span>
+            {info.club && (
+              <span>
+                <School aria-hidden />
+                <Link href={`/club/${info.club.id}`}>{info.club.name}</Link>
+              </span>
+            )}
+            {info.club?.location && (
+              <span>
+                <MapPin aria-hidden />
+                {info.club.location}
+              </span>
+            )}
+          </div>
+        </div>
+        <a className="btn btn-secondary" href={`https://theclubspot.com/regatta/${id}/results`} target="_blank" rel="noreferrer">
+          Official results <ExternalLink aria-hidden />
         </a>
       </div>
 
       {info.classes.length === 0 ? (
-        <div className="r-empty">No racing fleets published for this regatta yet.</div>
+        <div className="sr-empty">No racing fleets published for this regatta yet.</div>
       ) : (
         <>
-          <div className="r-tabs" role="tablist" style={{ marginTop: 26 }}>
+          <div className="sr-tabs" role="tablist" style={{ marginTop: 0 }}>
             {info.classes.map((c) => (
               <button key={c.id} role="tab" aria-selected={c.id === cls} onClick={() => setCls(c.id)}>
                 {c.name}
               </button>
             ))}
           </div>
-          {selected && (
-            <p className="muted small" style={{ margin: "4px 0 10px" }}>
-              {TIER_LABEL[fleetTier(selected.name)]} fleet{field ? ` · ${field.length} boats` : ""}
-              {selected.method === "pdf" || selected.method === "external_link" ? " · results are posted outside Clubspot" : ""}
-            </p>
+          {selected && field && field.length > 0 && (
+            <div className="kpis fx-stagger">
+              <div className="card kpi">
+                <div className="k">Fleet</div>
+                <div className="v" style={{ fontSize: 20 }}>{TIER_LABEL[fleetTier(selected.name)]}</div>
+                <div className="s">{selected.name}</div>
+              </div>
+              <div className="card kpi">
+                <div className="k">Boats</div>
+                <div className="v">{field.length}</div>
+                <div className="s">{new Set(field.map((r) => r.c).filter(Boolean)).size} clubs</div>
+              </div>
+              <div className="card kpi">
+                <div className="k">Races</div>
+                <div className="v">{races}</div>
+                <div className="s">{field.some((r) => r.f) ? "with finals fleets" : "single fleet"}</div>
+              </div>
+              <div className="card kpi">
+                <div className="k">Winner</div>
+                <div className="v" style={{ fontSize: 18, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{field[0].n}</div>
+                <div className="s">{field[0].net != null ? `${field[0].net} pts · ${field[0].c}` : field[0].c}</div>
+              </div>
+            </div>
           )}
-          {loading && <div className="r-skel" />}
-          {field && field.length === 0 && !loading && <div className="r-empty">No scores published for this fleet yet.</div>}
+          {loading && <div className="skel" style={{ height: 360 }} />}
+          {field && field.length === 0 && !loading && (
+            <div className="sr-empty">
+              No scores published for this fleet{selected?.method === "pdf" || selected?.method === "external_link" ? " on Clubspot (results are posted elsewhere)" : " yet"}.
+            </div>
+          )}
           {field && field.length > 0 && (
-            <div className="card table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th className="num">#</th>
-                    <th>Sailor</th>
-                    <th>Club</th>
-                    <th>Sail</th>
-                    {Array.from({ length: races }, (_, i) => (
-                      <th key={i} className="num">
-                        R{i + 1}
-                      </th>
-                    ))}
-                    <th className="num">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {field.map((r) => (
-                    <tr key={r.id}>
-                      <td className="num">
-                        <b>{r.p}</b>
-                        {r.f && <span className="muted tiny"> {r.f[0]}</span>}
-                      </td>
-                      <td className="nowrap">
-                        <Link href={`/dashboard?${new URLSearchParams({ name: r.n })}`}>{r.n}</Link>
-                      </td>
-                      <td className="clip">{r.c}</td>
-                      <td className="nowrap muted">{r.s}</td>
-                      {Array.from({ length: races }, (_, i) => {
-                        const x = r.r[i];
-                        return (
-                          <td key={i} className={`num${x?.[3] ? " dropped" : ""}`}>
-                            {x ? (x[1] ?? x[0] ?? "–") : ""}
-                          </td>
-                        );
-                      })}
-                      <td className="num">
-                        <b>{r.net ?? "–"}</b>
-                      </td>
+            <div className="stack">
+              <div className="card pad-0 table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="num">#</th>
+                      <th>Sailor</th>
+                      <th>Club</th>
+                      {Array.from({ length: races }, (_, i) => (
+                        <th key={i} className="num">
+                          R{i + 1}
+                        </th>
+                      ))}
+                      <th className="num">Net</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              {field.some((r) => r.f) && <p className="muted small">G/S/B/E = Gold/Silver/Bronze/Emerald finals fleet.</p>}
+                  </thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.id}>
+                        <td className="num">
+                          <b>{r.p}</b>
+                          {r.f && <span className="faint tiny"> {r.f[0]}</span>}
+                        </td>
+                        <td className="nowrap">
+                          <Link href={`/dashboard?${new URLSearchParams({ name: r.n })}`}>{r.n}</Link>
+                          {r.s && <span className="faint small"> #{r.s}</span>}
+                        </td>
+                        <td className="clip muted">{r.c}</td>
+                        {Array.from({ length: races }, (_, i) => {
+                          const x = r.r[i];
+                          return (
+                            <td key={i} className={`num${x?.[3] ? " dropped" : ""}`}>
+                              {x ? (x[1] ?? x[0] ?? "–") : ""}
+                            </td>
+                          );
+                        })}
+                        <td className="num">
+                          <b>{r.net ?? "–"}</b>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {field.length > 50 && (
+                  <button className="sr-more" onClick={() => setAll(!all)}>
+                    {all ? "Show top 50" : `Show all ${field.length} boats`}
+                  </button>
+                )}
+                {field.some((r) => r.f) && <p className="faint small">G/S/B/E = Gold/Silver/Bronze/Emerald finals fleet.</p>}
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <div>
+                    <h3>Club team results</h3>
+                    <p>Sum of each club&rsquo;s best three finishers</p>
+                  </div>
+                </div>
+                {teams.length === 0 ? (
+                  <p className="small muted">No club has three or more boats in this fleet.</p>
+                ) : (
+                  <div className="mini-list">
+                    {teams.map((t) => (
+                      <div key={t.key}>
+                        <span className="pb-ico" style={{ fontWeight: 700, fontSize: 13 }}>{t.teamRank}</span>
+                        <span className="main">
+                          <span className="t" style={{ display: "block" }}>{t.club}</span>
+                          <span className="d" style={{ display: "block" }}>
+                            {t.sailors.slice(0, 3).map((s) => s.p).join(" + ")} · {t.sailors.length} boats
+                          </span>
+                        </span>
+                        <span className="side">{t.teamScore}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </>

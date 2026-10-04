@@ -20,6 +20,15 @@ results.
   registrations (last name), boats by sail number or boat name.
 - **Regatta Network**: the public event calendar (`lib/regattanetwork.ts`), linked out to the event page.
 
+### Search behaviour
+
+- A full name ("First Last") returns one **best match** with instant stats (`/api/quick`: registrations plus
+  finishes from the 10 most recent regattas). A near-miss spelling is offered only when nobody matches
+  exactly; other people with the same surname are collapsed.
+- Club names fold spelled-out suffixes ("California YC" = "California Yacht Club", `lib/clubs.ts`). Bare
+  initials ("CYC") are never trusted on their own: in search they're listed as possible matches, and in team
+  results an abbreviation joins a full name only when it's the only club in the data with those initials.
+
 ### Credits and plans
 
 Every search costs 100 credits; loading a sailor's history costs 100 the first time each month. Everyone

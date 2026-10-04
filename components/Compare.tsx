@@ -1,5 +1,6 @@
 "use client";
 
+import { X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MultiRatingChart, multiStyle, RatingChart } from "./Charts";
@@ -160,10 +161,11 @@ export function Compare(props: { meName: string; mine: LoadedRegatta[]; plan: Pl
       )}
       {broke && <OutOfCredits what="Loading another sailor" />}
       {loading && (
-        <div className="card progress" role="status">
-          Loading {loading.name}&rsquo;s regattas…{" "}
-          {loading.progress?.total ? `${loading.progress.done}/${loading.progress.total}` : ""}
-          <div className="bar">
+        <div className="card status" role="status">
+          <span>
+            Loading {loading.name}&rsquo;s regattas… {loading.progress?.total ? `${loading.progress.done} of ${loading.progress.total}` : ""}
+          </span>
+          <div className="loadbar">
             <span style={{ width: `${loading.progress?.total ? (loading.progress.done / loading.progress.total) * 100 : 4}%` }} />
           </div>
         </div>
@@ -220,8 +222,8 @@ export function Compare(props: { meName: string; mine: LoadedRegatta[]; plan: Pl
                         <button className="link" onClick={() => setFocus(focus === o.key ? null : o.key)}>
                           {focus === o.key ? "Hide" : "Head-to-head"}
                         </button>{" "}
-                        <button className="link" aria-label={`Remove ${o.name}`} onClick={() => remove(o.name)}>
-                          ✕
+                        <button className="link" aria-label={`Remove ${o.name}`} title="Remove" onClick={() => remove(o.name)} style={{ verticalAlign: -3 }}>
+                          <X aria-hidden style={{ width: 15, height: 15 }} />
                         </button>
                       </td>
                     </tr>

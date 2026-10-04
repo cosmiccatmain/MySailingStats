@@ -3,7 +3,8 @@
 
 import type { FieldRow } from "./field";
 import { sailorKey } from "./rating";
-import { normalize, percentile } from "./standings";
+import { clubResolver } from "./clubs";
+import { percentile } from "./standings";
 
 export type LoadedRegatta = {
   id: string; // `${regattaId}:${classId}`
@@ -122,20 +123,11 @@ export function rivals(regattas: LoadedRegatta[], meKey: string, limit = 40): Ri
 
 // ---------- clubs ----------
 
-const CLUB_ALIASES: [RegExp, string][] = [
-  [/^ayc$/, "annapolis yacht club"],
-  [/^ssa$|^severn sailing( association)?$/, "severn sailing association"],
-  [/^hyc$/, "hampton yacht club"],
-];
+export { clubKey } from "./clubs";
 
-/** Club names are free text on registrations; fold the common variations together. */
-export function clubKey(club: string): string {
-  let k = normalize(club)
-    .replace(/\b(the|inc|jr|junior|sailing program|youth sailing)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  for (const [re, name] of CLUB_ALIASES) if (re.test(k)) k = name;
-  return k;
+/** One resolver over every club name in these regattas, so "AYC" joins a full name only when unambiguous. */
+export function resolverFor(regattas: LoadedRegatta[]): (name: string) => string {
+  return clubResolver(regattas.flatMap((r) => r.field.map((row) => row.c)));
 }
 
 export type ClubTeam = {
@@ -150,11 +142,11 @@ export type ClubTeam = {
 export const TEAM_SIZE = 3;
 
 /** Club team results for one regatta, ranked by the sum of each club's best three places. */
-export function clubTeams(field: FieldRow[]): ClubTeam[] {
+export function clubTeams(field: FieldRow[], resolve = clubResolver(field.map((r) => r.c))): ClubTeam[] {
   const map = new Map<string, FieldRow[]>();
   for (const row of field) {
     if (!row.c) continue;
-    const k = clubKey(row.c);
+    const k = resolve(row.c);
     if (!k) continue;
     map.set(k, [...(map.get(k) ?? []), row]);
   }
@@ -182,10 +174,10 @@ export type ClubSeason = {
 };
 
 /** One club across every loaded regatta: its sailors, team score and rank each time. */
-export function clubHistory(regattas: LoadedRegatta[], key: string): ClubSeason[] {
+export function clubHistory(regattas: LoadedRegatta[], key: string, resolve = resolverFor(regattas)): ClubSeason[] {
   const out: ClubSeason[] = [];
   for (const reg of regattas) {
-    const teams = clubTeams(reg.field);
+    const teams = clubTeams(reg.field, resolve);
     const team = teams.find((t) => t.key === key);
     if (!team) continue;
     const pcts = team.sailors.map((s) => percentile(s.p, reg.field.length)).filter((p): p is number => p != null);
@@ -200,12 +192,15 @@ export function clubHistory(regattas: LoadedRegatta[], key: string): ClubSeason[
 }
 
 /** Every club seen in the loaded regattas, most frequent first. */
-export function allClubs(regattas: LoadedRegatta[]): { key: string; club: string; entries: number; regattas: number }[] {
+export function allClubs(
+  regattas: LoadedRegatta[],
+  resolve = resolverFor(regattas),
+): { key: string; club: string; entries: number; regattas: number }[] {
   const map = new Map<string, { names: Map<string, number>; entries: number; regattas: Set<string> }>();
   for (const reg of regattas) {
     for (const row of reg.field) {
       if (!row.c) continue;
-      const k = clubKey(row.c);
+      const k = resolve(row.c);
       if (!k) continue;
       const m = map.get(k) ?? { names: new Map(), entries: 0, regattas: new Set<string>() };
       m.names.set(row.c, (m.names.get(row.c) ?? 0) + 1);

@@ -1,8 +1,9 @@
 "use client";
 
+import { ChevronRight, Download, ExternalLink, Lock } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { clubKey } from "@/lib/analysis";
+import { clubResolver } from "@/lib/clubs";
 import type { FieldRow } from "@/lib/field";
 import { fleetTier, TIER_LABEL } from "@/lib/fleets";
 import { downloadCsv, fmtDate, ordinal } from "@/lib/format";
@@ -22,6 +23,7 @@ export function RegattaList(props: {
   fields: Record<string, FieldRow[]>;
   perf: Map<string, RatingPoint>;
   onNotMe: (id: string) => void;
+  ratings?: boolean;
 }) {
   const [sort, setSort] = useState<"date" | "perf" | "pct">("date");
   const sorted = useMemo(() => {
@@ -35,12 +37,12 @@ export function RegattaList(props: {
   return (
     <div className="list">
       <div className="list-tools small">
-        <span className="muted">Sort by</span>
+        <span className="faint" style={{ marginRight: 4 }}>Sort by</span>
         {(
           [
             ["date", "Newest"],
-            ["perf", "Best rating"],
-            ["pct", "Best finish %"],
+            ...(props.ratings ? ([["perf", "Rating"]] as const) : []),
+            ["pct", "Share beaten"],
           ] as const
         ).map(([v, l]) => (
           <button key={v} className={`chip${sort === v ? " on" : ""}`} onClick={() => setSort(v)}>
@@ -54,6 +56,7 @@ export function RegattaList(props: {
         return (
           <details key={r.id} className={`card regatta tier-${fleetTier(r.fleet)}`}>
             <summary>
+              <ChevronRight className="chev" aria-hidden />
               <div className="rg-main">
                 <div className="rg-name">
                   {r.name}
@@ -87,7 +90,7 @@ export function RegattaList(props: {
                     <b>{r.me.net}</b> pts net
                   </span>
                 )}
-                {perf && (
+                {perf && props.ratings && (
                   <span>
                     Rating <b>{Math.round(perf.performance)}</b> vs field <b>{Math.round(perf.fieldStrength)}</b>
                   </span>
@@ -113,8 +116,8 @@ export function RegattaList(props: {
                   {r.winner ? `Won by ${r.winner.name}${r.winner.net != null ? ` (${r.winner.net} pts)` : ""}` : ""}
                 </span>
                 <span className="btns">
-                  <a href={r.url} target="_blank" rel="noreferrer">
-                    Official results ↗
+                  <a href={r.url} target="_blank" rel="noreferrer" className="row" style={{ gap: 4 }}>
+                    Official results <ExternalLink aria-hidden style={{ width: 13, height: 13 }} />
                   </a>
                   <button className="link muted" onClick={() => props.onNotMe(r.id)} title="Remove a wrong name match">
                     Not me
@@ -133,7 +136,8 @@ export function RegattaList(props: {
 export function Leaderboard(props: { field: FieldRow[]; meId: string; myClub: string; highlightKey?: (row: FieldRow) => boolean }) {
   const [all, setAll] = useState(false);
   const me = props.field.find((r) => r.id === props.meId);
-  const mine = clubKey(props.myClub);
+  const resolve = clubResolver([props.myClub, ...props.field.map((r) => r.c)]);
+  const mine = props.myClub ? resolve(props.myClub) : "";
   const rows = all
     ? props.field
     : props.field.filter((r) => r.p <= 3 || (me && Math.abs(r.p - me.p) <= 2) || props.highlightKey?.(r));
@@ -162,7 +166,7 @@ export function Leaderboard(props: { field: FieldRow[]; meId: string; myClub: st
               prev = r.p;
               const cls = [
                 r.id === props.meId ? "me" : "",
-                mine && clubKey(r.c) === mine && r.id !== props.meId ? "mate" : "",
+                mine && resolve(r.c) === mine && r.id !== props.meId ? "mate" : "",
                 props.highlightKey?.(r) ? "rival" : "",
                 gap ? "gap" : "",
               ].join(" ");
@@ -220,10 +224,12 @@ export function RaceTable({ results, sailor }: { results: RegattaResult[]; sailo
       <div className="table-tools">
         <span className="muted small">{races.length} races</span>
         {canExport ? (
-          <button onClick={exportCsv}>Download CSV</button>
+          <button className="btn btn-secondary btn-sm" onClick={exportCsv}>
+            <Download aria-hidden /> Download CSV
+          </button>
         ) : (
-          <Link href="/pricing" className="muted small" title="CSV export comes with Boater and up">
-            🔒 Download CSV
+          <Link href="/pricing" className="btn btn-ghost btn-sm" title="CSV export is included with Boater and up">
+            <Lock aria-hidden /> Download CSV
           </Link>
         )}
       </div>

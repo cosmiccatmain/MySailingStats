@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { FieldRow, FieldRace } from "./field";
+import { clubQueryVariants, clubResolver } from "./clubs";
 import { clubKey, clubTeams, headToHead, rivals, type LoadedRegatta } from "./analysis";
 import { computeRatings, sailorKey } from "./rating";
 import { fleetTier } from "./fleets";
@@ -56,7 +57,7 @@ test("club teams rank by the sum of the best three places", () => {
     row("d", 4, [4], "Hampton YC"), row("e", 5, [5], "Hampton YC"), row("f", 6, [6], "annapolis yacht club"),
   ];
   const teams = clubTeams(field);
-  assert.equal(clubKey("AYC"), clubKey("Annapolis Yacht Club"));
+  // "AYC" joins Annapolis Yacht Club here because it is the only club in the fleet with those initials.
   assert.equal(teams[0].key, clubKey("Annapolis Yacht Club"));
   assert.equal(teams[0].teamScore, 1 + 3 + 6);
   assert.equal(teams[1].teamScore, 2 + 4 + 5);
@@ -80,4 +81,26 @@ test("a mid-fleet Championship result outrates winning Green fleet", () => {
   assert.ok(c.fieldStrength > g.fieldStrength, "champ field is stronger");
   assert.ok(c.performance > g.performance, `champ ${c.performance} > green ${g.performance}`);
   assert.ok(g.after > g.before, "winning raises your rating");
+});
+
+test("club names: suffixes fold, bare initials only resolve when unambiguous", () => {
+  assert.equal(clubKey("California YC"), clubKey("California Yacht Club"));
+  assert.equal(clubKey("California Y.C."), clubKey("california yacht club"));
+  assert.equal(clubKey("Severn SA"), clubKey("Severn Sailing Association"));
+  assert.notEqual(clubKey("CYC"), clubKey("California Yacht Club"));
+
+  const one = clubResolver(["CYC", "California Yacht Club", "Hampton YC"]);
+  assert.equal(one("CYC"), one("California Yacht Club"));
+
+  const two = clubResolver(["AYC", "Annapolis Yacht Club", "American Yacht Club"]);
+  assert.notEqual(two("AYC"), two("Annapolis Yacht Club"));
+  assert.notEqual(two("AYC"), two("American Yacht Club"));
+});
+
+test("club search variants cover the short and long suffix", () => {
+  const v = clubQueryVariants("California Yacht Club").map((w) => w.join(" "));
+  assert.ok(v.includes("california yacht club"));
+  assert.ok(v.includes("california yc"));
+  const w = clubQueryVariants("California YC").map((x) => x.join(" "));
+  assert.ok(w.includes("california yacht club"));
 });

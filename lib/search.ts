@@ -3,6 +3,7 @@
 // Network's event calendar. Every query here hits an index on Clubspot except
 // sail-number / boat-name lookups, which are slower and capped by a timeout.
 
+import { clubKey, clubQueryVariants, isAbbreviation } from "./clubs";
 import { escapeRe, parse, titleCase } from "./clubspot";
 import { searchRegattaNetwork } from "./regattanetwork";
 import { normalize } from "./standings";
@@ -19,6 +20,8 @@ export type SailorHit = {
   lastDate: string;
   classes: string[];
   coach: boolean;
+  /** How the name relates to the query: the person searched for, a near-miss, a similar first name, or just the same surname. */
+  match: "exact" | "close" | "similar" | "surname";
 };
 export type RegattaHit = {
   id: string;
@@ -30,11 +33,13 @@ export type RegattaHit = {
   url: string;
   external: boolean;
 };
-export type ClubHit = { id: string; name: string; location: string; url: string };
+export type ClubHit = { id: string; name: string; location: string; url: string; match: "name" | "initials" };
 export type BoatHit = { boat: string; sail: string; sailor: string; regatta: string; regattaId: string; date: string };
 
 export type SearchResults = {
   q: string;
+  /** The sailor the query names (exact full name, or the closest spelling). */
+  best: SailorHit | null;
   sailors: SailorHit[];
   coaches: SailorHit[];
   regattas: RegattaHit[];
@@ -106,6 +111,7 @@ function groupPeople(rows: RegRow[], firstFilter: string): SailorHit[] {
       lastDate: "",
       classes: [],
       coach: false,
+      match: "surname" as SailorHit["match"],
       regattaIds: new Set<string>(),
       clubSet: new Set<string>(),
       classSet: new Set<string>(),
@@ -129,23 +135,55 @@ function groupPeople(rows: RegRow[], firstFilter: string): SailorHit[] {
       clubs: [...clubSet].slice(0, 4),
       classes: [...classSet].slice(0, 6),
     }))
-    .sort((a, b) => b.regattas - a.regattas || b.lastDate.localeCompare(a.lastDate))
-    .slice(0, 30);
+    .sort((a, b) => b.regattas - a.regattas || b.lastDate.localeCompare(a.lastDate));
+}
+
+/** Edit distance, for "Wil" vs "Will" or "Margo" vs "Margot". */
+function distance(a: string, b: string): number {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return d[b.length];
 }
 
 async function searchPeople(q: string): Promise<SailorHit[]> {
   const tokens = q.trim().split(/\s+/).filter(Boolean);
   if (!tokens.length || /^\d+$/.test(q.trim())) return [];
-  const first = tokens.length > 1 ? normalize(tokens[0]) : "";
+  const first = tokens.length > 1 ? tokens[0] : "";
   const last = tokens.length > 1 ? tokens.slice(1).join(" ") : tokens[0];
   const variants = [...new Set([last, titleCase(last.toLowerCase()), last.toLowerCase(), last.toUpperCase()])];
-  const [exact, prefix] = await Promise.all([
+  const firstPrefix = first ? titleCase(first.slice(0, 3).toLowerCase()) : "";
+  const [named, surname, prefix] = await Promise.all([
+    // The person themselves: never crowded out by a common surname's other registrations.
+    first ? registrations({ lastName: { $in: variants }, firstName: { $regex: `^${escapeRe(firstPrefix)}` } }, 600) : [],
     registrations({ lastName: { $in: variants } }),
-    registrations({ lastName: { $regex: `^${escapeRe(titleCase(last.toLowerCase()))}` } }),
+    registrations({ lastName: { $regex: `^${escapeRe(titleCase(last.toLowerCase()))}` } }, 200),
   ]);
   const seen = new Set<string>();
-  const rows = [...exact, ...prefix].filter((r) => !seen.has(r.objectId) && seen.add(r.objectId));
-  return groupPeople(rows, first);
+  const rows = [...named, ...surname, ...prefix].filter((r) => !seen.has(r.objectId) && seen.add(r.objectId));
+  const people = groupPeople(rows, "");
+  if (!first) return people.slice(0, 40);
+
+  // Rank against the full name that was typed.
+  const wantFirst = normalize(first);
+  const wantLast = normalize(last);
+  for (const p of people) {
+    const [f, ...rest] = normalize(p.name).split(" ");
+    const l = rest.join(" ");
+    if (l !== wantLast && !l.endsWith(` ${wantLast}`)) continue;
+    if (f === wantFirst) p.match = "exact";
+    else if (f.startsWith(wantFirst) || wantFirst.startsWith(f)) p.match = "similar";
+    else if (wantFirst.length >= 4 && distance(f, wantFirst) <= (wantFirst.length >= 7 ? 2 : 1)) p.match = "close";
+  }
+  const order = { exact: 0, close: 1, similar: 2, surname: 3 } as const;
+  return people.sort((a, b) => order[a.match] - order[b.match] || b.regattas - a.regattas).slice(0, 40);
 }
 
 // ---------- boats ----------
@@ -228,28 +266,43 @@ async function searchClubspotRegattas(tokens: string[]): Promise<RegattaHit[]> {
 
 type ClubRow = Ptr & { name?: string; city?: string; state?: string; country?: string; subdomain?: string; customDomain?: string };
 
-async function searchClubs(q: string, tokens: string[]): Promise<ClubHit[]> {
-  if (!tokens.length) return [];
+async function searchClubs(q: string): Promise<ClubHit[]> {
+  const variants = clubQueryVariants(q); // "California Yacht Club" ↔ "California YC"
+  if (!variants.length) return [];
   const keys = "name,city,state,country,subdomain,customDomain";
-  const [byKeyword, byName] = await Promise.all([
-    parse<{ results?: ClubRow[] }>("classes/clubs", { _method: "GET", where: { keywords: { $all: tokens } }, keys, limit: 20 }),
-    parse<{ results?: ClubRow[] }>("classes/clubs", {
-      _method: "GET",
-      where: { name: { $regex: `^${escapeRe(titleCase(q.trim().toLowerCase()))}` } },
-      keys,
-      limit: 20,
-    }),
+  const find = (where: Record<string, unknown>, limit = 20) =>
+    parse<{ results?: ClubRow[] }>("classes/clubs", { _method: "GET", where, keys, limit }).then((r) => r.results ?? [], () => []);
+  const abbr = isAbbreviation(q) ? normalize(q) : "";
+  const [byName, byKeyword, byInitials] = await Promise.all([
+    Promise.all(variants.map((ws) => find({ name: { $regex: `^${escapeRe(titleCase(ws.join(" ")))}` } }))).then((x) => x.flat()),
+    Promise.all(variants.map((ws) => find({ keywords: { $all: ws } }))).then((x) => x.flat()),
+    // Initials are only a hint ("CYC" could be California, Columbia or Chicago YC), so these are labelled as possible matches.
+    abbr
+      ? find({ name: { $regex: `^${[...abbr].map((c) => `${c}[a-z.']*`).join("\\s+(?:of\\s+|the\\s+)?")}\\b`, $options: "i" } }, 30)
+      : Promise.resolve([] as ClubRow[]),
   ]);
+  const want = clubKey(q);
   const seen = new Set<string>();
-  return [...(byName.results ?? []), ...(byKeyword.results ?? [])]
-    .filter((c) => c.name && !seen.has(c.objectId) && seen.add(c.objectId))
-    .map((c) => ({
-      id: c.objectId,
-      name: c.name!.trim(),
-      location: [c.city, c.state, c.country && !/^us/i.test(c.country) ? c.country : ""].filter(Boolean).join(", "),
-      url: `/club/${c.objectId}`,
-    }))
-    .slice(0, 20);
+  const hits: ClubHit[] = [];
+  const add = (rows: ClubRow[], match: ClubHit["match"]) => {
+    for (const c of rows) {
+      if (!c.name || seen.has(c.objectId)) continue;
+      seen.add(c.objectId);
+      hits.push({
+        id: c.objectId,
+        name: c.name.trim(),
+        location: [c.city, c.state, c.country && !/^us/i.test(c.country) ? c.country : ""].filter(Boolean).join(", "),
+        url: `/club/${c.objectId}`,
+        match,
+      });
+    }
+  };
+  add(byName, "name");
+  add(byKeyword, "name");
+  add(byInitials, "initials");
+  // Exact name (in any spelling) first, then other name matches, then initials.
+  const rank = (h: ClubHit) => (clubKey(h.name) === want ? 0 : h.match === "name" ? 1 : 2);
+  return hits.sort((a, b) => rank(a) - rank(b)).slice(0, 30);
 }
 
 // ---------- everything ----------
@@ -299,7 +352,7 @@ export async function search(q: string, type: SearchType = "all"): Promise<Searc
           [] as RegattaHit[],
         )
       : [],
-    want("clubs") ? guard("Clubspot clubs", searchClubs(q, tokens), [] as ClubHit[]) : [],
+    want("clubs") ? guard("Clubspot clubs", searchClubs(q), [] as ClubHit[]) : [],
     // Boat-name / sail-number lookups aren't indexed on Clubspot: cap them.
     // Boat-name lookups are slow on Clubspot (unindexed), so "Everything" only checks sail numbers.
     type === "boats" || (type === "all" && SAIL_LIKE.test(q.trim()))
@@ -308,9 +361,13 @@ export async function search(q: string, type: SearchType = "all"): Promise<Searc
   ]);
 
   const regattas = [...csRegattas, ...rnRegattas].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+  const racers = people.filter((p) => !p.coach || p.classes.some((c) => !NON_RACING.test(c)));
+  // A full name picks out one person; a near-miss spelling is offered only when nobody matches exactly.
+  const best = want("sailors") ? (racers.find((p) => p.match === "exact") ?? racers.find((p) => p.match === "close") ?? null) : null;
   return {
     q,
-    sailors: want("sailors") ? people.filter((p) => !p.coach || p.classes.some((c) => !NON_RACING.test(c))) : [],
+    best,
+    sailors: want("sailors") ? racers.filter((p) => p !== best) : [],
     coaches: want("coaches") ? people.filter((p) => p.coach) : [],
     regattas,
     clubs,

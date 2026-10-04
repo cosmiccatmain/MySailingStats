@@ -1,18 +1,37 @@
 "use client";
 
+import {
+  BarChart3,
+  CalendarDays,
+  Check,
+  Download,
+  Flag,
+  Hash,
+  LayoutDashboard,
+  Link2,
+  ListOrdered,
+  Lock,
+  MoreHorizontal,
+  RefreshCw,
+  RotateCcw,
+  School,
+  Sparkles,
+  UserRound,
+  Users,
+  UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Logo } from "./site/Art";
-import { Locked, OutOfCredits } from "./site/Gate";
-import { CreditsPill } from "./site/SiteHeader";
-import { DistributionChart, RaceChart, RaceNumberChart } from "./Charts";
-import { Overview } from "./Overview";
+import { DistributionChart, FleetSizeChart, RaceChart, RaceNumberChart } from "./Charts";
+import { Overview, type Upcoming } from "./Overview";
 import { Clubs } from "./Clubs";
 import { Compare } from "./Compare";
 import { RaceTable, RegattaList } from "./Regattas";
-import { clubKey } from "@/lib/analysis";
+import { Locked, OutOfCredits } from "./site/Gate";
+import { SiteFooter, SiteHeader } from "./site/SiteHeader";
+import { resolverFor } from "@/lib/analysis";
 import { fleetTier, isGreenFleet, isOptiFleet } from "@/lib/fleets";
-import { fmtDate } from "@/lib/format";
+import { downloadCsv, fmtDate } from "@/lib/format";
 import {
   EMPTY,
   loadCached,
@@ -26,9 +45,10 @@ import {
   type Store,
   type Unscored,
 } from "@/lib/loader";
+import { DASHBOARDS, hasFeature, type Feature } from "@/lib/plans";
 import { computeRatings, sailorKey, type RatingPoint } from "@/lib/rating";
+import { percentile } from "@/lib/standings";
 import { toLoaded, type RegattaResult } from "@/lib/stats";
-import { hasFeature } from "@/lib/plans";
 import { markPaid, paidFor, spend, useWallet } from "@/lib/wallet";
 
 type Profile = { name: string };
@@ -37,12 +57,12 @@ type Tab = "overview" | "regattas" | "races" | "compare" | "clubs";
 
 const PROFILE_KEY = "mss:profile";
 const FILTER_KEY = "mss:filters";
-const TABS: [Tab, string][] = [
-  ["overview", "Overview"],
-  ["regattas", "Regattas"],
-  ["races", "Races"],
-  ["compare", "Compare"],
-  ["clubs", "Clubs"],
+const TABS: [Tab, string, typeof Flag, Feature | null][] = [
+  ["overview", "Overview", LayoutDashboard, null],
+  ["regattas", "Regattas", Flag, null],
+  ["races", "Races", ListOrdered, null],
+  ["compare", "Compare", UsersRound, "multiCompare"],
+  ["clubs", "Clubs", School, "clubSearch"],
 ];
 
 function recentlyReloaded(): boolean {
@@ -56,6 +76,15 @@ function recentlyReloaded(): boolean {
   return false;
 }
 
+const initialsOf = (n: string) =>
+  n
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
 export default function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [ready, setReady] = useState(false);
@@ -67,6 +96,7 @@ export default function Dashboard() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [broke, setBroke] = useState(false);
+  const [upcoming, setUpcoming] = useState<Upcoming[] | null>(null);
   const cancel = useRef(false);
   const wallet = useWallet();
   const plus = hasFeature(wallet.plan, "dashboardPlus");
@@ -94,6 +124,20 @@ export default function Dashboard() {
     setReady(true);
   }, []);
 
+  // Upcoming registrations (not part of the cached store; cheap and cached server-side).
+  useEffect(() => {
+    if (!profile) return;
+    let live = true;
+    setUpcoming(null);
+    fetch(`/api/upcoming?${new URLSearchParams({ name: profile.name })}`)
+      .then((r) => (r.ok ? r.json() : { upcoming: [] }))
+      .then((b: { upcoming?: Upcoming[] }) => live && setUpcoming(b.upcoming ?? []))
+      .catch(() => live && setUpcoming([]));
+    return () => {
+      live = false;
+    };
+  }, [profile]);
+
   const scan = useCallback(async (p: Profile, full: boolean) => {
     cancel.current = false;
     setError(null);
@@ -120,7 +164,7 @@ export default function Dashboard() {
       });
       setStore(s);
       setFields(f);
-      if (failed) setError(`${failed} regatta(s) couldn't be loaded — run "Check for new results" to retry them.`);
+      if (failed) setError(`${failed} regatta(s) couldn't be loaded. Use "Check for new results" to retry them.`);
     } catch (e) {
       if (e instanceof StaleAppError && !recentlyReloaded()) {
         window.location.reload();
@@ -143,11 +187,13 @@ export default function Dashboard() {
 
   const onSaveProfile = (p: Profile) => {
     writeJson(PROFILE_KEY, p);
+    window.dispatchEvent(new Event("mss:profile"));
     const c = loadCached(p.name);
     setProfile(p);
     setStore(c.store);
     setFields(c.fields);
     setSeason("all");
+    setTab("overview");
     const url = new URL(window.location.href);
     url.search = "";
     window.history.replaceState(null, "", url);
@@ -156,6 +202,14 @@ export default function Dashboard() {
       void scan(p, true);
     }
   };
+
+  // A sailor opened from search becomes "my sailor" once their results load, if none is saved yet.
+  useEffect(() => {
+    if (profile && store.results.length && !readJson<Profile | null>(PROFILE_KEY, null)) {
+      writeJson(PROFILE_KEY, profile);
+      window.dispatchEvent(new Event("mss:profile"));
+    }
+  }, [profile, store.results.length]);
 
   const notMe = (id: string) => {
     if (!profile) return;
@@ -196,9 +250,7 @@ export default function Dashboard() {
     () => store.results.filter((r) => visibleFleet(r.fleet) && (season === "all" || r.date.startsWith(season))),
     [store.results, visibleFleet, season],
   );
-  const unscored = store.unscored.filter(
-    (r) => visibleFleet(r.fleet) && (season === "all" || r.date.startsWith(season)),
-  );
+  const unscored = store.unscored.filter((r) => visibleFleet(r.fleet) && (season === "all" || r.date.startsWith(season)));
   const visibleHistory = useMemo(() => {
     const ids = new Set(results.map((r) => r.id));
     return history.filter((h) => ids.has(h.regattaId));
@@ -207,16 +259,39 @@ export default function Dashboard() {
   const greenCount = everything.filter((r) => isOptiFleet(r.fleet) && isGreenFleet(r.fleet)).length;
   const otherCount = everything.filter((r) => !isOptiFleet(r.fleet)).length;
   const myClub = useMemo(() => {
+    const resolve = resolverFor(loaded);
     const counts = new Map<string, { name: string; n: number }>();
-    for (const r of store.results) {
+    for (const r of [...store.results].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12)) {
       if (!r.me.club) continue;
-      const k = clubKey(r.me.club);
-      counts.set(k, { name: r.me.club, n: (counts.get(k)?.n ?? 0) + 1 });
+      const k = resolve(r.me.club);
+      counts.set(k, { name: counts.get(k)?.name ?? r.me.club, n: (counts.get(k)?.n ?? 0) + 1 });
     }
     return [...counts.values()].sort((a, b) => b.n - a.n)[0]?.name ?? "";
-  }, [store.results]);
+  }, [store.results, loaded]);
+  const sail = useMemo(() => [...store.results].sort((a, b) => b.date.localeCompare(a.date)).find((r) => r.me.sail && r.me.sail !== "TBD")?.me.sail ?? "", [store.results]);
+  const since = useMemo(() => (store.results.length ? Math.min(...store.results.map((r) => new Date(r.date).getFullYear())) : null), [store.results]);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen && !planOpen) return;
+    const close = (e: MouseEvent) => {
+      if (actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setPlanOpen(false);
+      }
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && (setMenuOpen(false), setPlanOpen(false));
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menuOpen, planOpen]);
+
   if (!ready) return null;
 
   const setFilter = (f: Filters) => {
@@ -224,160 +299,270 @@ export default function Dashboard() {
     writeJson(FILTER_KEY, f);
   };
   const hasData = store.results.length > 0 || store.unscored.length > 0;
+  const changeTab = (t: Tab) => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    if (t === "overview") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", t);
+    window.history.replaceState(null, "", url);
+  };
+  const copyLink = () => {
+    const url = `${window.location.origin}/dashboard?${new URLSearchParams({ name })}`;
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  };
+  const exportAll = () =>
+    downloadCsv(`${name.replace(/\W+/g, "-")}-regattas.csv`, [
+      ["Date", "Regatta", "Fleet", "Club", "Place", "Boats", "Beat %", "Net"],
+      ...[...store.results]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .map((r) => [r.date.slice(0, 10), r.name, r.fleet, r.club, r.me.place, r.entrants, Math.round(percentile(r.me.place, r.entrants) ?? 0), r.me.net]),
+    ]);
+  const dash = plus ? DASHBOARDS.plus : DASHBOARDS.go;
 
   return (
-    <main className="wrap">
-      <header className="topbar">
-        <Link href="/" className="s-logo brand" aria-label="MySailingStats home">
-          <Logo />
-          <span>MySailingStats</span>
-          <span className={`plan-tag${plus ? "" : " go"}`}>{plus ? "DashboardPlus" : "DashboardGo"}</span>
-        </Link>
-        {profile && hasData && (
-          <nav className="nav" role="tablist">
-            {TABS.map(([k, label]) => (
-              <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>
-                {label}
-              </button>
-            ))}
-          </nav>
-        )}
-        <div className="actions">
-          <CreditsPill />
-          <Link className="icon-btn" href="/" title="Search" aria-label="Search">
-            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-          </Link>
-          {profile && (
-            <>
-            <button
-              className="icon-btn"
-              title={progress ? "Stop" : "Check for new results"}
-              aria-label={progress ? "Stop" : "Check for new results"}
-              onClick={() => (progress ? (cancel.current = true) : scan(profile, false))}
-            >
-              {progress ? <span className="spin">↻</span> : "↻"}
-            </button>
-            <button className="icon-btn" aria-label="More" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
-              ⋯
-            </button>
-            {menuOpen && (
-              <div className="menu" onClick={() => setMenuOpen(false)}>
-                <div className="menu-note">
-                  {profile.name}
-                  <br />
-                  {store.scannedAt ? `Updated ${fmtDate(store.scannedAt)}` : "Not scanned yet"}
+    <div className="page app">
+      <SiteHeader />
+      <main className="wrap">
+        {!profile ? (
+          <Setup initial={readJson<Profile>(PROFILE_KEY, { name: "" }).name ?? ""} onSave={onSaveProfile} />
+        ) : (
+          <>
+            <header className="dash-head fx">
+              <div className="dash-id">
+                <span className="avatar" aria-hidden>
+                  {initialsOf(profile.name)}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <h1>{profile.name}</h1>
+                  <div className="sub">
+                    {myClub && (
+                      <span>
+                        <School aria-hidden />
+                        {myClub}
+                      </span>
+                    )}
+                    {sail && (
+                      <span>
+                        <Hash aria-hidden />
+                        {sail}
+                      </span>
+                    )}
+                    {since && (
+                      <span>
+                        <CalendarDays aria-hidden />
+                        Racing since {since}
+                      </span>
+                    )}
+                    <span>
+                      <RefreshCw aria-hidden />
+                      {progress ? "Updating…" : store.scannedAt ? `Updated ${fmtDate(store.scannedAt)}` : "Not loaded yet"}
+                    </span>
+                  </div>
                 </div>
-                <button onClick={() => scan(profile, false)}>Check for new results</button>
-                <button onClick={() => scan(profile, true)}>Rescan everything</button>
-                <button onClick={() => setProfile(null)}>Change sailor</button>
-                <Link href="/pricing">Plans &amp; credits</Link>
+              </div>
+              <div className="dash-actions" ref={actionsRef}>
+                <button className={`plan-chip${plus ? " plus" : ""}`} onClick={() => (setPlanOpen(!planOpen), setMenuOpen(false))} aria-expanded={planOpen}>
+                  {plus ? <Sparkles aria-hidden /> : <BarChart3 aria-hidden />}
+                  {dash.name}
+                </button>
+                <button
+                  className="icon-btn"
+                  title={progress ? "Stop" : "Check for new results"}
+                  aria-label={progress ? "Stop" : "Check for new results"}
+                  onClick={() => (progress ? (cancel.current = true) : scan(profile, false))}
+                >
+                  <RefreshCw className={progress ? "spin" : undefined} aria-hidden />
+                </button>
+                <button className="icon-btn" aria-label="More actions" aria-expanded={menuOpen} onClick={() => (setMenuOpen(!menuOpen), setPlanOpen(false))}>
+                  <MoreHorizontal aria-hidden />
+                </button>
+                {planOpen && (
+                  <div className="dropdown" style={{ width: 320, padding: 14, gap: 10 }}>
+                    <div className="pill-label">Your dashboard</div>
+                    <div>
+                      <b style={{ fontSize: 16 }}>{dash.name}</b>
+                      <p className="small muted" style={{ marginTop: 2 }}>{dash.summary}</p>
+                    </div>
+                    <div className="stack" style={{ gap: 6 }}>
+                      {dash.items.map(([t]) => (
+                        <div key={t} className="row small">
+                          <Check aria-hidden style={{ color: "var(--good)" }} />
+                          {t}
+                        </div>
+                      ))}
+                    </div>
+                    {!plus && (
+                      <div className="small muted" style={{ borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                        <b style={{ color: "var(--text-primary)" }}>DashboardPlus</b> adds {DASHBOARDS.plus.items.map(([t]) => t.toLowerCase()).join(", ")}.
+                      </div>
+                    )}
+                    <Link className="btn btn-primary btn-sm" href="/pricing" style={{ alignSelf: "flex-start" }}>
+                      {plus ? "Manage plan" : "Upgrade to DashboardPlus"}
+                    </Link>
+                  </div>
+                )}
+                {menuOpen && (
+                  <div className="dropdown" onClick={() => setMenuOpen(false)}>
+                    <button onClick={() => scan(profile, false)}>
+                      <RefreshCw aria-hidden /> Check for new results
+                    </button>
+                    <button onClick={() => scan(profile, true)}>
+                      <RotateCcw aria-hidden /> Reload everything
+                    </button>
+                    <button onClick={copyLink}>
+                      <Link2 aria-hidden /> {copied ? "Link copied" : "Copy link to this dashboard"}
+                    </button>
+                    {hasFeature(wallet.plan, "csvExport") && (
+                      <button onClick={exportAll}>
+                        <Download aria-hidden /> Download regattas (CSV)
+                      </button>
+                    )}
+                    <hr />
+                    <button onClick={() => setProfile(null)}>
+                      <UserRound aria-hidden /> Change sailor
+                    </button>
+                  </div>
+                )}
+              </div>
+            </header>
+
+            {hasData && (
+              <nav className="tabs" role="tablist" aria-label="Dashboard sections">
+                {TABS.map(([k, label, Icon, feature]) => (
+                  <button key={k} role="tab" aria-selected={tab === k} onClick={() => changeTab(k)}>
+                    <Icon aria-hidden />
+                    {label}
+                    {feature && !hasFeature(wallet.plan, feature) && <Lock className="lock" aria-label="Not in your plan" />}
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            {progress && (
+              <div className="card status fx-in" role="status">
+                <RefreshCw className="spin" aria-hidden style={{ width: 16, height: 16 }} />
+                <span>
+                  {progress.total ? `Loading results… ${progress.done} of ${progress.total} regattas` : "Finding every regatta registered on Clubspot…"}
+                </span>
+                <div className="loadbar">
+                  <span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 6}%` }} />
+                </div>
               </div>
             )}
-            </>
-          )}
-        </div>
-      </header>
+            {error && <div className="card warn">{error}</div>}
+            {broke && <OutOfCredits what={`Loading ${profile.name}'s results`} />}
 
-      {progress && (
-        <div className="status" role="status">
-          <span>
-            {progress.total
-              ? `Loading results… ${progress.done}/${progress.total}`
-              : "Finding every regatta you've registered for on Clubspot…"}
-          </span>
-          <div className="loadbar" style={{ flex: 1, maxWidth: 360 }}>
-            <span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 8}%` }} />
-          </div>
-        </div>
-      )}
-      {error && <div className="card warn">{error}</div>}
-      {broke && <OutOfCredits what={`Loading ${profile?.name ?? "a sailor"}'s results`} />}
-
-      {!profile ? (
-        <Setup initial={readJson<Profile>(PROFILE_KEY, { name: "" }).name ?? ""} onSave={onSaveProfile} />
-      ) : broke && !hasData ? null : !hasData && !progress ? (
-        <div className="card empty">
-          <h2>No regattas found yet</h2>
-          <p className="muted">
-            Searched Clubspot for <b>{profile.name}</b>. Use your name exactly as it appears on regatta registrations
-            (&ldquo;First Last&rdquo;).
-          </p>
-        </div>
-      ) : (
-        <>
-          {tab !== "compare" && tab !== "clubs" && (
-            <div className="filters">
-              <select className="compact" value={season} onChange={(e) => setSeason(e.target.value)} aria-label="Season">
-                <option value="all">All seasons</option>
-                {seasons.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-              {greenCount > 0 && (
-                <label className="toggle small">
-                  <input type="checkbox" checked={filters.green} onChange={(e) => setFilter({ ...filters, green: e.target.checked })} />
-                  Green fleet
-                </label>
-              )}
-              {otherCount > 0 && (
-                <label className="toggle small">
-                  <input type="checkbox" checked={filters.other} onChange={(e) => setFilter({ ...filters, other: e.target.checked })} />
-                  Other boats
-                </label>
-              )}
-            </div>
-          )}
-
-          {tab === "overview" && (
-            <Overview name={profile.name} results={results} history={visibleHistory} allHistory={history} perf={perf} plus={plus} />
-          )}
-          {tab === "regattas" && (
-            <>
-              <RegattaList results={results} fields={fields} perf={perf} onNotMe={notMe} />
-              <UnscoredList unscored={unscored} />
-            </>
-          )}
-          {tab === "races" && <RacesTab results={results} sailor={profile.name} />}
-          {tab === "compare" &&
-            (hasFeature(wallet.plan, "multiCompare") ? (
-              <Compare meName={profile.name} mine={loaded} plan={wallet.plan} />
+            {broke && !hasData ? null : !hasData && !progress ? (
+              <div className="card setup" style={{ margin: 0, maxWidth: "none", padding: 32 }}>
+                <h2>No regattas found</h2>
+                <p>
+                  Nothing on Clubspot matches <b>{profile.name}</b>. Use the name exactly as it appears on regatta registrations (First Last), or{" "}
+                  <Link href={`/search?${new URLSearchParams({ q: profile.name })}`}>search for similar names</Link>.
+                </p>
+              </div>
+            ) : !hasData ? (
+              <DashSkeleton />
             ) : (
-              <Locked
-                wide
-                feature="multiCompare"
-                text="Line up sailors side by side: head-to-head records, same-start race wins and ratings on one scale."
-              />
-            ))}
-          {tab === "clubs" &&
-            (hasFeature(wallet.plan, "clubSearch") ? (
-              <Clubs regattas={loaded} myClub={myClub} meName={profile.name} />
-            ) : (
-              <Locked wide feature="clubSearch" text="Team scores for any club at every regatta, ranked by each club's best three finishers." />
-            ))}
-        </>
-      )}
-      <footer className="muted small">
-        Results from Clubspot (usoda.org and club regatta sites), checked against official results. Ratings are this app&rsquo;s
-        own estimate.
-      </footer>
-    </main>
+              <>
+                {tab !== "compare" && tab !== "clubs" && (
+                  <div className="toolbar">
+                    <select className="compact" value={season} onChange={(e) => setSeason(e.target.value)} aria-label="Season">
+                      <option value="all">All seasons</option>
+                      {seasons.map((y) => (
+                        <option key={y} value={y}>
+                          {y} season
+                        </option>
+                      ))}
+                    </select>
+                    {greenCount > 0 && (
+                      <label className="toggle">
+                        <input type="checkbox" checked={filters.green} onChange={(e) => setFilter({ ...filters, green: e.target.checked })} />
+                        Include Green fleet
+                      </label>
+                    )}
+                    {otherCount > 0 && (
+                      <label className="toggle">
+                        <input type="checkbox" checked={filters.other} onChange={(e) => setFilter({ ...filters, other: e.target.checked })} />
+                        Include other classes
+                      </label>
+                    )}
+                    <span className="spacer" />
+                    <span className="small faint">
+                      {results.length} of {store.results.length} regattas shown
+                    </span>
+                  </div>
+                )}
+
+                <div key={tab} className="tab-panel" role="tabpanel">
+                  {tab === "overview" && (
+                    <Overview name={profile.name} results={results} history={visibleHistory} allHistory={history} perf={perf} plus={plus} upcoming={upcoming} />
+                  )}
+                  {tab === "regattas" && (
+                    <>
+                      <RegattaList results={results} fields={fields} perf={perf} onNotMe={notMe} ratings={plus} />
+                      <UnscoredList unscored={unscored} />
+                    </>
+                  )}
+                  {tab === "races" && <RacesTab results={results} sailor={profile.name} />}
+                  {tab === "compare" &&
+                    (hasFeature(wallet.plan, "multiCompare") ? (
+                      <Compare meName={profile.name} mine={loaded} plan={wallet.plan} />
+                    ) : (
+                      <Locked
+                        wide
+                        feature="multiCompare"
+                        text="Line up sailors side by side: head-to-head records, same-start race results and ratings on one scale."
+                      />
+                    ))}
+                  {tab === "clubs" &&
+                    (hasFeature(wallet.plan, "clubSearch") ? (
+                      <Clubs regattas={loaded} myClub={myClub} meName={profile.name} />
+                    ) : (
+                      <Locked wide feature="clubSearch" text="Team results for any club at every regatta, ranked by each club's best three finishers." />
+                    ))}
+                </div>
+              </>
+            )}
+            <p className="app-foot">
+              Results from Clubspot, checked against official results. Ratings are MySailingStats&rsquo; own estimate.
+            </p>
+          </>
+        )}
+      </main>
+      <SiteFooter />
+    </div>
+  );
+}
+
+function DashSkeleton() {
+  return (
+    <div className="stack" aria-hidden>
+      <div className="kpis">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="skel" style={{ height: 104 }} />
+        ))}
+      </div>
+      <div className="skel" style={{ height: 150 }} />
+      <div className="split">
+        <div className="skel" style={{ height: 340 }} />
+        <div className="skel" style={{ height: 340 }} />
+      </div>
+    </div>
   );
 }
 
 function Setup({ initial, onSave }: { initial: string; onSave: (p: Profile) => void }) {
   const [name, setName] = useState(initial);
   return (
-    <section className="hero setup-hero">
-      <h1>Every race you&rsquo;ve sailed.</h1>
-      <p>
-        USODA championships and local club regattas from Clubspot — ratings, rivals, and club results. Enter your name as it
-        appears on registrations.
-      </p>
+    <section className="setup fx">
+      <div className="ico" aria-hidden>
+        <Users />
+      </div>
+      <h1>Set up your dashboard</h1>
+      <p>Enter the sailor&rsquo;s name as it appears on regatta registrations. We&rsquo;ll find every regatta on Clubspot and score each race.</p>
       <form
         className="setup-form"
         onSubmit={(e) => {
@@ -386,12 +571,12 @@ function Setup({ initial, onSave }: { initial: string; onSave: (p: Profile) => v
         }}
       >
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First Last" autoFocus aria-label="Sailor name" />
-        <button type="submit" disabled={name.trim().split(/\s+/).length < 2}>
-          Let&rsquo;s go
+        <button type="submit" className="btn btn-primary btn-lg" disabled={name.trim().split(/\s+/).length < 2}>
+          Open dashboard
         </button>
       </form>
       <p className="setup-alt">
-        Looking for someone else, a regatta or a club? <Link href="/">Search everything →</Link>
+        Not sure of the spelling? <Link href="/">Search for the sailor</Link>.
       </p>
     </section>
   );
@@ -404,6 +589,7 @@ function RacesTab({ results, sailor }: { results: RegattaResult[]; sailor: strin
         <RaceChart results={results} />
         <RaceNumberChart results={results} />
         <DistributionChart results={results} />
+        <FleetSizeChart results={results} />
       </div>
       <RaceTable results={results} sailor={sailor} />
     </>
@@ -417,7 +603,7 @@ function UnscoredList({ unscored }: { unscored: Unscored[] }) {
       <summary>
         {unscored.length} more regatta{unscored.length === 1 ? "" : "s"} registered without online scores
       </summary>
-      <p className="muted small">Results for these were posted outside Clubspot (PDF or another site), or you didn&rsquo;t race.</p>
+      <p className="muted small">Results for these were posted outside Clubspot (PDF or another site), or the sailor didn&rsquo;t race.</p>
       <ul>
         {[...unscored]
           .sort((a, b) => b.date.localeCompare(a.date))
@@ -426,7 +612,7 @@ function UnscoredList({ unscored }: { unscored: Unscored[] }) {
               <a href={u.url} target="_blank" rel="noreferrer">
                 {u.name}
               </a>{" "}
-              <span className="muted small">
+              <span className="faint small">
                 · {fmtDate(u.date)} · {u.fleet}
                 {u.club ? ` · ${u.club}` : ""}
               </span>

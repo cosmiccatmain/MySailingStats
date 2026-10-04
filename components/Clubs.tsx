@@ -3,21 +3,22 @@
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { TierBadge } from "./Regattas";
-import { allClubs, clubHistory, clubKey, clubTeams, TEAM_SIZE, type LoadedRegatta } from "@/lib/analysis";
+import { allClubs, clubHistory, clubTeams, resolverFor, TEAM_SIZE, type LoadedRegatta } from "@/lib/analysis";
 import { fleetTier } from "@/lib/fleets";
 import { fmtDate, ordinal } from "@/lib/format";
 import { sailorKey } from "@/lib/rating";
 import { percentile } from "@/lib/standings";
 
 export function Clubs(props: { regattas: LoadedRegatta[]; myClub: string; meName: string }) {
-  const clubs = useMemo(() => allClubs(props.regattas), [props.regattas]);
+  const resolve = useMemo(() => resolverFor(props.regattas), [props.regattas]);
+  const clubs = useMemo(() => allClubs(props.regattas, resolve), [props.regattas, resolve]);
   const [query, setQuery] = useState(props.myClub);
   const [allMembers, setAllMembers] = useState(false);
   const selected = useMemo(() => {
-    const k = clubKey(query);
+    const k = resolve(query);
     return clubs.find((c) => c.key === k) ?? clubs.find((c) => k && c.key.includes(k)) ?? null;
   }, [clubs, query]);
-  const history = useMemo(() => (selected ? clubHistory(props.regattas, selected.key) : []), [props.regattas, selected]);
+  const history = useMemo(() => (selected ? clubHistory(props.regattas, selected.key, resolve) : []), [props.regattas, selected]);
   const meKey = sailorKey(props.meName);
 
   // Every sailor who has raced for this club in the loaded regattas.

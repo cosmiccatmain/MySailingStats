@@ -128,3 +128,55 @@ export function toLoaded(
       field: fields[r.id].map((row) => (row.id === r.me.id ? { ...row, n: canonicalName } : row)),
     }));
 }
+
+const FLEET_SIZES = [
+  { label: "Under 30", max: 29 },
+  { label: "30–79", max: 79 },
+  { label: "80–149", max: 149 },
+  { label: "150+", max: Infinity },
+];
+
+/** Average share of the fleet beaten, by fleet size. Buckets with no regattas are dropped. */
+export function byFleetSize(results: RegattaResult[]) {
+  return FLEET_SIZES.map((b, i) => {
+    const min = i ? FLEET_SIZES[i - 1].max + 1 : 0;
+    const ps = results
+      .filter((r) => r.entrants >= min && r.entrants <= b.max)
+      .map((r) => percentile(r.me.place, r.entrants))
+      .filter((x): x is number => x != null);
+    return { label: b.label, regattas: ps.length, avg: ps.length ? Math.round(ps.reduce((a, c) => a + c, 0) / ps.length) : null };
+  }).filter((b) => b.regattas > 0);
+}
+
+export type SeasonRow = { year: string; regattas: number; races: number; avgPct: number | null; best: RegattaResult | null; podiums: number; topTen: number };
+
+/** One row per calendar year, newest first. */
+export function seasons(results: RegattaResult[]): SeasonRow[] {
+  const by = new Map<string, RegattaResult[]>();
+  for (const r of results) by.set(r.date.slice(0, 4), [...(by.get(r.date.slice(0, 4)) ?? []), r]);
+  return [...by.entries()]
+    .sort(([a], [b]) => b.localeCompare(a))
+    .map(([year, rs]) => {
+      const pcts = rs.map((r) => percentile(r.me.place, r.entrants)).filter((x): x is number => x != null);
+      const best = [...rs].sort((a, b) => (percentile(b.me.place, b.entrants) ?? -1) - (percentile(a.me.place, a.entrants) ?? -1))[0] ?? null;
+      return {
+        year,
+        regattas: rs.length,
+        races: rs.reduce((n, r) => n + r.me.races.length, 0),
+        avgPct: pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null,
+        best,
+        podiums: rs.filter((r) => r.me.place <= 3).length,
+        topTen: rs.filter((r) => r.me.place <= 10).length,
+      };
+    });
+}
+
+/** Spread of race finishes (standard deviation of share beaten); lower = more consistent. */
+export function consistency(results: RegattaResult[]): number | null {
+  const ps = allRaces(results)
+    .map((r) => r.pct)
+    .filter((x): x is number => x != null);
+  if (ps.length < 8) return null;
+  const mean = ps.reduce((a, b) => a + b, 0) / ps.length;
+  return Math.sqrt(ps.reduce((a, b) => a + (b - mean) ** 2, 0) / ps.length);
+}

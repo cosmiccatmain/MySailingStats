@@ -64,7 +64,7 @@ export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * prefix match — these hit Clubspot's index, so it's fast); the first name is
  * then checked loosely so "Max" finds "Maxwell".
  */
-export async function findRegistrations(fullName: string): Promise<Registration[]> {
+export async function findRegistrations(fullName: string, when: "past" | "upcoming" = "past"): Promise<Registration[]> {
   const tokens = fullName.trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
   const first = tokens.length > 1 ? tokens[0] : "";
@@ -104,7 +104,8 @@ export async function findRegistrations(fullName: string): Promise<Registration[
     const rg = r.regattaObject;
     const bc = r.boatClassObject;
     if (!rg?.startDate?.iso || !bc?.objectId || rg.archived || r.archived) continue;
-    if (Date.parse(rg.startDate.iso) > now) continue;
+    const start = Date.parse(rg.startDate.iso);
+    if (when === "past" ? start > now : start < now - 36 * 3600e3) continue;
     if (bc.scoring?.method === "not_racing") continue;
     const last = normalize(r.lastName ?? "");
     if (last !== wantLast && last !== normalize(lastWord) && !last.startsWith(wantLast)) continue;
