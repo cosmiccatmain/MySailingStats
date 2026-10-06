@@ -82,7 +82,6 @@ export type Prospect = {
   natTop5: number; // national-level top-5 division finishes
   skipper: number; // share of events as skipper, 0–1
   best: { regatta: string; slug: string; season: string; rank: number; teams: number; level: Level; div: string } | null;
-  last: { regatta: string; date: string; rank: number; teams: number; div: string } | null;
   score: number;
   avgPct: number;
   recent: number | null;
@@ -130,7 +129,7 @@ export async function buildPool(seasonCount = 4): Promise<Pool> {
     ),
   );
 
-  type Acc = Omit<Prospect, keyof ReturnType<typeof scoreResults> | "events" | "national" | "natTop5" | "skipper" | "best" | "last"> & { results: Result[] };
+  type Acc = Omit<Prospect, keyof ReturnType<typeof scoreResults> | "events" | "national" | "natTop5" | "skipper" | "best"> & { results: Result[] };
   const people = new Map<string, Acc>();
   for (const x of pages) {
     if (!x) continue;
@@ -178,7 +177,6 @@ export async function buildPool(seasonCount = 4): Promise<Pool> {
       natTop5: rs.filter((r) => r.level === "national" && r.rank <= 5).length,
       skipper: rs.length ? Math.round((rs.filter((r) => r.role === "S").length / rs.length) * 100) / 100 : 0,
       best: pick ? { regatta: pick.regatta, slug: pick.slug, season: pick.season, rank: pick.rank, teams: pick.teams, level: pick.level, div: pick.div } : null,
-      last: rs[0] ? { regatta: rs[0].regatta, date: rs[0].date, rank: rs[0].rank, teams: rs[0].teams, div: rs[0].div } : null,
       ...scoreResults(rs, now),
     });
   }

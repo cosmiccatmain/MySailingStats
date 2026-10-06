@@ -22,6 +22,10 @@ test("event levels", () => {
   assert.equal(levelOf("District Champ Qualifier"), "championship");
   assert.equal(levelOf("In-District"), "invitational");
   assert.equal(levelOf("", "ISSA 2025 Atlantic Coast Championship"), "national");
+  assert.equal(levelOf("District Championship", "MASSA 2026 Fleet Championship & Mallory Qualifier"), "championship");
+  assert.equal(levelOf("", "MISSA NW Mallory Prequalifier @ Sheboygan"), "championship");
+  assert.equal(levelOf("", "NJISA 2026 New Jersey State Championship"), "championship");
+  assert.equal(levelOf("", "NJISA 2025 TR Fall Series 6"), "invitational");
 });
 
 test("season list", () => {
@@ -66,6 +70,7 @@ test("sailor profile history", () => {
   assert.equal(s.regattaCount, 12);
   const ac = s.history.find((h) => h.regattaSlug === "issa-2025-atlantic-coast")!;
   assert.deepEqual([ac.season, ac.role, ac.place, ac.of, ac.div, ac.level, ac.date], ["f25", "Skipper", 1, 18, "A", "national", "2025-11-08"]);
+  assert.equal(s.history.find((h) => h.regattaSlug === "massa-2026-fleet-mallory-qualifier")!.level, "championship");
   const k = s.history.find((h) => h.regattaSlug === "massa-2025-keelboat")!;
   assert.deepEqual([k.role, k.place, k.of, k.div], ["Crew", 2, 7, null]);
   assert.equal(s.history[0].date >= s.history[s.history.length - 1].date, true);

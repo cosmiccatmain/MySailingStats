@@ -11,7 +11,7 @@ export const CONFERENCE_DISTRICT: Record<string, string> = {
   PCCSC: "PCISA",
   NWICSA: "NWISA",
   MAISA: "MASSA",
-  NEISA: "NEISA",
+  NEISA: "NESSA",
   SAILA: "SAISA",
   SEISA: "SEISA",
   MCSA: "MISSA",
@@ -21,11 +21,10 @@ export const DISTRICT_NAME: Record<string, string> = {
   PCISA: "Pacific Coast",
   NWISA: "Northwest",
   MASSA: "Mid-Atlantic",
-  NEISA: "New England",
+  NESSA: "New England",
   SAISA: "South Atlantic",
   SEISA: "Southeast",
   MISSA: "Midwest",
-  HISA: "Hawaii",
 };
 
 export const districtLabel = (d: string) => (DISTRICT_NAME[d] ? `${d} (${DISTRICT_NAME[d]})` : d);

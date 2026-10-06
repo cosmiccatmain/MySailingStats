@@ -139,6 +139,25 @@ export default async function Home() {
           </ul>
         </section>
 
+        <section className="band coach-band">
+          <div>
+            <h2>For college and club coaches</h2>
+            <p className="band-lead">
+              Recruiter ranks every high school sailor racing C420s, FJs and Z420s by class year, school and district, from two years of
+              championship results on Techscore. It knows the team you coach: your roster by class year, the high schools it came from and
+              the talent near you.
+            </p>
+          </div>
+          <div className="coach-cta">
+            <Link className="btn btn-primary btn-lg" href="/recruit">
+              Open Recruiter
+            </Link>
+            <Link className="btn btn-ghost btn-lg" href="/pricing?for=enterprise">
+              Coach plans
+            </Link>
+          </div>
+        </section>
+
         <section className="band" style={{ paddingBottom: 72 }}>
           <div className="band-head">
             <h2>Your results, in one place</h2>

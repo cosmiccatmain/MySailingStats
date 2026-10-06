@@ -84,8 +84,11 @@ export const LEVEL_LABEL: Record<Level, string> = { national: "National", champi
 export const LEVEL_WEIGHT: Record<Level, number> = { national: 1, championship: 0.75, invitational: 0.5 };
 
 export function levelOf(type: string, name = ""): Level {
-  if (/national/i.test(type) || /\b(mallory|baker|cressy|great oaks|atlantic coast|issa .*championship)\b/i.test(name)) return "national";
-  if (/championship|tournament|qualifier|qualfier/i.test(type)) return "championship";
+  if (/national/i.test(type)) return "national";
+  // "Mallory Qualifier" is a district event, not the Mallory itself.
+  if (/qualif|qualfier/i.test(name)) return "championship";
+  if (/\bnational|\b(mallory|baker|cressy|great oaks|atlantic coast|sears|bemis|smythe)\b/i.test(name)) return "national";
+  if (/championship|tournament|qualifier|qualfier/i.test(type) || /championship|champs\b|\bstate\b/i.test(name)) return "championship";
   return "invitational";
 }
 
