@@ -30,7 +30,7 @@ function PlanCard({ plan, current, onChoose, top }: { plan: Plan; current: boole
   const plus = plan.features.includes("dashboardPlus");
   return (
     <div className={`p-card${plan.highlight ? " hl" : ""}`}>
-      {plan.highlight && <span className="p-ribbon">{plan.enterprise ? "Best for programs" : "Most popular"}</span>}
+      {plan.highlight && <span className="p-ribbon">{plan.id === "recruiter" ? "For college coaches" : plan.enterprise ? "Best for programs" : "Most popular"}</span>}
       <div className="p-name">
         <span>{plan.name}</span>
         {current && <span className="p-current">Current plan</span>}
@@ -145,6 +145,7 @@ const ROWS: Row[] = [
   ["Fleet-strength rating", "Adjusts for how strong each fleet was", (p) => p.features.includes("dashboardPlus")],
   ["Rating history and insights", null, (p) => p.features.includes("dashboardPlus")],
   ["Rival Radar", "Head-to-head record vs everyone", (p) => p.features.includes("rivalRadar")],
+  ["Recruiter", "High school prospects, your roster and a recruiting board", (p) => p.features.includes("recruiter")],
 ];
 
 function CompareTable({ ids }: { ids: PlanId[] }) {
@@ -187,6 +188,7 @@ export function Pricing() {
   const wallet = useWallet();
   const [mode, setMode] = useState<"personal" | "enterprise">(sp.get("for") === "enterprise" ? "enterprise" : "personal");
   const [teamTier, setTeamTier] = useState<"team" | "teamplus">("teamplus");
+  const [coachTier, setCoachTier] = useState<"coach" | "recruiter">(sp.get("plan") === "coach" ? "coach" : "recruiter");
   const [sales, setSales] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -212,7 +214,7 @@ export function Pricing() {
   };
 
   const cur = (id: PlanId) => wallet.plan === id;
-  const ids: PlanId[] = mode === "personal" ? PERSONAL_PLANS : ["coach", teamTier, "club"];
+  const ids: PlanId[] = mode === "personal" ? PERSONAL_PLANS : [coachTier, teamTier, "club"];
 
   return (
     <div style={{ paddingBottom: 24 }}>
@@ -238,7 +240,24 @@ export function Pricing() {
         {mode === "personal"
           ? PERSONAL_PLANS.map((id) => <PlanCard key={id} plan={PLANS[id]} current={cur(id)} onChoose={pick} />)
           : [
-              <PlanCard key="coach" plan={PLANS.coach} current={cur("coach")} onChoose={pick} />,
+              <PlanCard
+                key="coach"
+                plan={PLANS[coachTier]}
+                current={cur(coachTier)}
+                onChoose={pick}
+                top={
+                  <Slider
+                    small
+                    label="Coach plan"
+                    value={coachTier}
+                    onChange={setCoachTier}
+                    options={[
+                      ["coach", "Coach"],
+                      ["recruiter", "Recruiter"],
+                    ]}
+                  />
+                }
+              />,
               <PlanCard
                 key="team"
                 plan={PLANS[teamTier]}
@@ -320,7 +339,10 @@ export function Pricing() {
           </div>
           <div>
             <h4>Where do results come from?</h4>
-            <p>Clubspot (including every USODA event) and Regatta Network today. Techscore, Sailwave and Manage2Sail are planned.</p>
+            <p>
+              Clubspot (including every USODA event) and Regatta Network for youth and club racing, and Techscore for high school and college
+              sailing (C420, FJ, Z420). Sailwave and Manage2Sail are planned.
+            </p>
           </div>
         </div>
       </section>

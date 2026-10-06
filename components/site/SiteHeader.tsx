@@ -92,6 +92,10 @@ export function SiteHeader({ variant = "bar" }: { variant?: "bar" | "shell" }) {
                   <b>{name || "My dashboard"}</b>
                   <small>{name ? "Your results and stats" : "Set up your sailor"}</small>
                 </Link>
+                <Link className="mp-link" href="/recruit" role="menuitem">
+                  <b>Recruiter</b>
+                  <small>High school prospects for your team</small>
+                </Link>
               </div>
               <div className="mp-col">
                 <h4>Plans</h4>
@@ -101,7 +105,7 @@ export function SiteHeader({ variant = "bar" }: { variant?: "bar" | "shell" }) {
                 </Link>
                 <Link className="mp-link" href="/pricing?for=enterprise" role="menuitem">
                   <b>Coaches and teams</b>
-                  <small>Coach, Team, TeamPlus, Club</small>
+                  <small>Coach, Recruiter, Team, Club</small>
                 </Link>
               </div>
               <div className="mp-col mp-account">
@@ -145,13 +149,14 @@ export function SiteFooter() {
             <Logo />
             <span>MySailingStats</span>
           </Link>
-          <p>Results, rankings and race-by-race history from Clubspot and Regatta Network, checked against the official results.</p>
+          <p>Results, rankings and race-by-race history from Clubspot, Regatta Network and Techscore, checked against the official results.</p>
         </div>
         <div>
           <h4>Find</h4>
           <nav>
             <Link href="/">Search</Link>
             <Link href="/dashboard">My dashboard</Link>
+            <Link href="/recruit">Recruiter</Link>
           </nav>
         </div>
         <div>
@@ -169,6 +174,9 @@ export function SiteFooter() {
             </a>
             <a href="https://www.regattanetwork.com" target="_blank" rel="noreferrer">
               Regatta Network
+            </a>
+            <a href="https://scores.hssailing.org" target="_blank" rel="noreferrer">
+              Techscore
             </a>
           </nav>
         </div>

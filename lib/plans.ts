@@ -3,8 +3,8 @@
 export const CREDITS_PER_SEARCH = 100;
 export const FREE_CREDITS = 500; // one-time starter balance: five searches
 
-export type PlanId = "free" | "boater" | "parent" | "platinum" | "coach" | "team" | "teamplus" | "club";
-export type Feature = "dashboardGo" | "dashboardPlus" | "clubSearch" | "multiCompare" | "csvExport" | "rivalRadar";
+export type PlanId = "free" | "boater" | "parent" | "platinum" | "coach" | "recruiter" | "team" | "teamplus" | "club";
+export type Feature = "dashboardGo" | "dashboardPlus" | "clubSearch" | "multiCompare" | "csvExport" | "rivalRadar" | "recruiter";
 
 export type Plan = {
   id: PlanId;
@@ -100,6 +100,25 @@ export const PLANS: Record<PlanId, Plan> = {
       { text: "Coach notes on regattas", soon: true },
     ],
   },
+  recruiter: {
+    id: "recruiter",
+    name: "Recruiter",
+    price: 99,
+    credits: 40000,
+    blurb: "For college and club coaches: find, rank and track high school prospects.",
+    features: [...plus, "recruiter"],
+    compareLimit: 15,
+    enterprise: true,
+    highlight: true,
+    perks: [
+      { text: "40,000 credits / month" },
+      { text: "Prospect rankings from high school sailing (Techscore): C420, FJ, Z420" },
+      { text: "Class year, school, district and every result for each prospect" },
+      { text: "Knows your program: roster by class year, feeder schools, local talent" },
+      { text: "Recruiting board with stages, notes and CSV export" },
+      { text: "Everything in Coach" },
+    ],
+  },
   team: {
     id: "team",
     name: "Team",
@@ -126,7 +145,6 @@ export const PLANS: Record<PlanId, Plan> = {
     features: plus,
     compareLimit: 100,
     enterprise: true,
-    highlight: true,
     perks: [
       { text: "150,000 credits / month" },
       { text: "Get all the kids: auto-import every sailor who races for your club", soon: true },
@@ -141,7 +159,7 @@ export const PLANS: Record<PlanId, Plan> = {
     price: null,
     credits: Infinity,
     blurb: "For yacht clubs, class associations and regional programs.",
-    features: plus,
+    features: [...plus, "recruiter"],
     compareLimit: 200,
     enterprise: true,
     perks: [
@@ -160,7 +178,7 @@ export const hasFeature = (plan: PlanId, f: Feature) => PLANS[plan].features.inc
 
 /** Cheapest plan that includes a feature (for upgrade prompts). */
 export function planFor(f: Feature): Plan {
-  return [PLANS.boater, PLANS.parent, PLANS.platinum].find((p) => p.features.includes(f)) ?? PLANS.platinum;
+  return [PLANS.boater, PLANS.parent, PLANS.platinum, PLANS.recruiter].find((p) => p.features.includes(f)) ?? PLANS.platinum;
 }
 
 export const FEATURE_LABEL: Record<Feature, string> = {
@@ -170,6 +188,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   multiCompare: "Multi Compare",
   csvExport: "CSV export",
   rivalRadar: "Rival Radar",
+  recruiter: "Recruiter",
 };
 
 export const fmtCredits = (n: number) => (Number.isFinite(n) ? n.toLocaleString("en-US") : "Unlimited");

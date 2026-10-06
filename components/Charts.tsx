@@ -477,3 +477,66 @@ export function FleetSizeChart({ results }: { results: RegattaResult[] }) {
     </Card>
   );
 }
+
+// ---------- recruiting ----------
+
+type ProspectLevel = "national" | "championship" | "invitational";
+const LEVEL_STYLE: Record<ProspectLevel, { label: string; color: string; shape: "circle" | "diamond" | "square" }> = {
+  national: { label: "National", color: "var(--series-1)", shape: "circle" },
+  championship: { label: "Championship", color: "var(--series-2)", shape: "diamond" },
+  invitational: { label: "Invitational", color: "var(--series-neutral)", shape: "square" },
+};
+type ProspectPoint = { t: number; y: number; regatta: string; place: number; of: number; div: string | null; role: string; level: ProspectLevel };
+
+function ProspectTip({ active, payload }: { active?: boolean; payload?: { payload: ProspectPoint }[] }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="tip">
+      <b>{d.regatta}</b>
+      <div className="muted">
+        {new Date(d.t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} · {LEVEL_STYLE[d.level].label} · {d.role}
+      </div>
+      <div>
+        {ordinal(d.place)} of {d.of}
+        {d.div ? ` in ${d.div} division` : ""} · ahead of {Math.round(d.y)}% of the fleet
+      </div>
+    </div>
+  );
+}
+
+/** A high school sailor's finishes over time, by event level (100% = won). */
+export function ProspectChart({ rows }: { rows: { date: string; regatta: string; place: number | null; of: number | null; div: string | null; role: string; level: ProspectLevel }[] }) {
+  const points: ProspectPoint[] = rows
+    .filter((r) => r.place != null && r.of != null && r.of > 1 && r.date)
+    .map((r) => ({ t: Date.parse(r.date), y: (1 - (r.place! - 1) / (r.of! - 1)) * 100, regatta: r.regatta, place: r.place!, of: r.of!, div: r.div, role: r.role, level: r.level }));
+  const present = (Object.keys(LEVEL_STYLE) as ProspectLevel[]).filter((l) => points.some((p) => p.level === l));
+  if (points.length < 2) return null;
+  return (
+    <Card title="Finishes over time" sub="Share of the fleet finished ahead of, by event level (100% = won)" wide>
+      <ResponsiveContainer width="100%" height={280}>
+        <ScatterChart margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+          {grid}
+          <XAxis dataKey="t" type="number" scale="time" domain={["dataMin - 1296000000", "dataMax + 1296000000"]} tickFormatter={shortDate} {...axis} />
+          <YAxis dataKey="y" type="number" domain={[0, 100]} unit="%" width={48} {...axis} />
+          <ZAxis range={[90, 90]} />
+          <ReferenceLine y={50} stroke="var(--border)" strokeDasharray="4 4" />
+          <Tooltip content={<ProspectTip />} cursor={{ strokeDasharray: "3 3", stroke: "var(--text-muted)" }} />
+          {present.length > 1 && <Legend wrapperStyle={legendStyle} />}
+          {present.map((l) => (
+            <Scatter
+              key={l}
+              name={LEVEL_STYLE[l].label}
+              data={points.filter((p) => p.level === l)}
+              fill={LEVEL_STYLE[l].color}
+              shape={LEVEL_STYLE[l].shape}
+              stroke="var(--surface-1)"
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+          ))}
+        </ScatterChart>
+      </ResponsiveContainer>
+    </Card>
+  );
+}
